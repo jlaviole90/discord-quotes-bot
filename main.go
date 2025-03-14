@@ -66,7 +66,6 @@ func handleQuote(s *discordgo.Session, r *discordgo.MessageReactionAdd) {
 
 		has := false
 		for _, chn := range chns {
-			println(chn.Name)
 			if chn.Name == "quotes" {
 				has = true
 
