@@ -1,40 +1,41 @@
 package main
 
 import (
-    "flag"
-    "log"
-    "os"
-    "os/signal"
-    "strings"
+	"flag"
+	"fmt"
+	"log"
+	"os"
+	"os/signal"
+	"strings"
 
-    "github.com/bwmarrin/discordgo"
+	"github.com/bwmarrin/discordgo"
 )
 
 type optionMap = map[string]*discordgo.ApplicationCommandInteractionDataOption
 
 func parseOptions(options []*discordgo.ApplicationCommandInteractionDataOption) (om optionMap) {
-    om = make(optionMap)
-    for _, opt := range options {
-        om[opt.Name] = opt
-    }
-    return
+	om = make(optionMap)
+	for _, opt := range options {
+		om[opt.Name] = opt
+	}
+	return
 }
 
 func interationAuthor(i *discordgo.Interaction) *discordgo.User {
-    if i.Member != nil {
-        return i.Member.User
-    }
-    return i.User
+	if i.Member != nil {
+		return i.Member.User
+	}
+	return i.User
 }
 
 func handleEcho(s *discordgo.Session, i *discordgo.InteractionCreate, opts optionMap) {
-    builder := new(strings.Builder)
-    if v, ok := opts["author"]; ok && v.BoolValue() {
-        author := interactionAuthor(i.Interaction)
-        builder.WriteString("**" + author + "** says: ")
-    }
+	builder := new(strings.Builder)
+	if v, ok := opts["author"]; ok && v.BoolValue() {
+		author := interactionAuthor(i.Interaction)
+		builder.WriteString("**" + author + "** says: ")
+	}
 
-    builder.WriteString(opts["message"].StringValue())
+	builder.WriteString(opts["message"].StringValue())
 
 	err := s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
 		Type: discordgo.InteractionResponseChannelMessageWithSource,
@@ -42,7 +43,6 @@ func handleEcho(s *discordgo.Session, i *discordgo.InteractionCreate, opts optio
 			Content: builder.String(),
 		},
 	})
-
 	if err != nil {
 		log.Panicf("could not respond to interaction: %s", err)
 	}
@@ -80,7 +80,11 @@ func main() {
 		log.Fatal("application id is not set")
 	}
 
-	session, _ := discordgo.New("Bot " + *Token)
+	os.Getenv("DISCORD_TOKEN")
+
+	session, _ := discordgo.New(
+		"Bot " + "",
+	)
 
 	session.AddHandler(func(s *discordgo.Session, i *discordgo.InteractionCreate) {
 		if i.Type != discordgo.InteractionApplicationCommand {
@@ -99,25 +103,34 @@ func main() {
 		log.Printf("Logged in as %s", r.User.String())
 	})
 
-    session.AddHandler(func(s *discordgo.Session, r *discordgo.MessageReactionAdd) {
-        if r.MessageReaction.Emoji.Name != "📸" || r.MessageReaction.Emoji.Name != ":camera_with_flash:" {
-            return
-        }
+	session.AddHandler(func(s *discordgo.Session, r *discordgo.MessageReactionAdd) {
+		if r.MessageReaction.Emoji.Name != "📸" ||
+			r.MessageReaction.Emoji.Name != ":camera_with_flash:" {
+			return
+		}
 
-        usr := s.User(r.UserID)
-        
-        msg, err := s.ChannelMessage(r.ChannelID, r.MessageID)
-        if err != nil {
-            log.Fatalf("could not get message: %s", err)
-        }
+		usr, err := s.User(r.UserID)
+		if err != nil {
+			log.Fatalf("could not get user: %s", err)
+		}
 
-        chns := s.GuildChannels()
-        for _, chn := range chns {
-            if chn.Name == "quotes" {
-                chn.SendMessage(fmt.Sprintf("%s: %s", usr.Username, msg.Content))
-            }
-        }
-    })
+		msg, err := s.ChannelMessage(r.ChannelID, r.MessageID)
+		if err != nil {
+			log.Fatalf("could not get message: %s", err)
+		}
+
+		chns, err := s.GuildChannels(r.GuildID)
+		if err != nil {
+			log.Fatalf("could not get channels: %s", err)
+		}
+		for _, chn := range chns {
+			if chn.Name == "quotes" {
+				s.ChannelMessageSend(chn.ID, fmt.Sprintf("%s: %s", usr.Username, msg.Content))
+			} else {
+				s.ChannelMessageSend(r.ChannelID, fmt.Sprint("Cannot find quotes channel!"))
+			}
+		}
+	})
 
 	_, err := session.ApplicationCommandBulkOverwrite(*App, *Guild, commands)
 	if err != nil {
@@ -137,5 +150,4 @@ func main() {
 	if err != nil {
 		log.Printf("could not close session gracefully: %s", err)
 	}
-}
 }
