@@ -71,11 +71,6 @@ USER appuser
 # Copy the executable from the "build" stage.
 COPY --from=build /bin/server /bin/
 
-ENV PORT=3000
-
-# Expose the port that the application listens on.
-EXPOSE 3000
-
 # What the container should run when it is started.
 ENTRYPOINT [ "/bin/server" ]
 

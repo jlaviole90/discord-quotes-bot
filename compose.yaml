@@ -16,4 +16,6 @@ services:
       - 3000:3000
     environment:
       PORT: 3000
+    env_file:
+      - ./.env
 
