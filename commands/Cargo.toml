@@ -1,0 +1,15 @@
+[package]
+name = "commands"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+postgres = "0.19.8"
+
+poise.workspace = true
+serde.workspace = true
+tokio.workspace = true
+reqwest.workspace = true
+serenity.workspace = true
+
+core = { path = "../core" }

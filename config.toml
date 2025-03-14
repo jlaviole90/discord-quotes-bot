@@ -1,0 +1,12 @@
+[Main]
+log_legel = "info"
+server_invite = "https://disccord.gg/"
+# service = ''
+
+[PostgreSQL-Info]
+database = 'tier_list'
+password = 'tier_list_password'
+host = 'localhost'
+user = 'tier_list'
+
+[Webhook-Info]

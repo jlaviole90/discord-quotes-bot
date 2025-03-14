@@ -1,0 +1,18 @@
+# https://docs.docker.com/go/compose-spec-reference/
+
+secrets:
+  discord_token:
+    file: ./discord_token.txt
+
+services:
+  server:
+    container_name: discord-tier-list-bot
+    build:
+      context: .
+      target: final
+    image: discord-tier-list-bot
+    ports:
+      - 2018:2018
+    secrets:
+      - discord_token
+
