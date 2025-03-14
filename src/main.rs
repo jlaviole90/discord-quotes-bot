@@ -10,8 +10,7 @@ pub fn main() {
 
 #[tokio::main]
 async fn run(start_time: std::time::Instant) {
-    //let token = get_token().expect("Discord token not found.");
-    let token = "MTM0OTkxNTE2MTI3NTY2NjQ5Ng.Gsf5uk.1g_JvsPfX3e7CVz-McbfzbDSfF-sfZt4S7loDs";
+    let token = get_token().expect("Discord token not found.");
     let intents = constants::get_intents();
 
     let data = std::sync::Arc::new(framework::Data {
