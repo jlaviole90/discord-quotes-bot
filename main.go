@@ -157,7 +157,7 @@ func unplugChris(s *discordgo.Session, r *discordgo.MessageCreate) {
 		_, err := s.ChannelMessageSendReply(
 			r.ChannelID,
 			"Take your plug out Chris.",
-			r.MessageReference,
+			r.Reference(),
 		)
 		if err != nil {
 			log.Fatalf("FATAL 0010: could not send message: %s\n", err)
