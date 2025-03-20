@@ -13,9 +13,9 @@ services:
       context: .
       target: final
     ports:
-      - 3000:3000
+      - 2018:2018
     environment:
-      PORT: 3000
+      PORT: 2018 
     env_file:
       - ./.env
 

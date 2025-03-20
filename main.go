@@ -20,6 +20,7 @@ func main() {
 	})
 
 	session.AddHandler(handleQuote)
+	session.AddHandler(unplugChris)
 
 	err := session.Open()
 	if err != nil {
@@ -141,5 +142,25 @@ func enableChannelCache(s *discordgo.Session, c *discordgo.Channel) {
 	err := s.State.ChannelAdd(c)
 	if err != nil {
 		log.Printf("WARNING: could not add channel to state: %s\n", err)
+	}
+}
+
+func unplugChris(s *discordgo.Session, r *discordgo.MessageCreate) {
+    fmt.Printf("message create: %s\n", r.Author.Username)
+	chn, err := s.Channel(r.ChannelID)
+	if err != nil {
+		log.Fatalf("FATAL 0009: could not get channel: %s\n", err)
+	}
+	if strings.ToLower(chn.Name) == "arguments" &&
+		(strings.ToLower(r.Author.Username) == "craschka" ||
+			strings.ToLower(r.Author.Username) == "OutcvstGaming") {
+		_, err := s.ChannelMessageSendReply(
+			r.ChannelID,
+			"Take your plug out Chris.",
+			r.MessageReference,
+		)
+		if err != nil {
+			log.Fatalf("FATAL 0010: could not send message: %s\n", err)
+		}
 	}
 }
