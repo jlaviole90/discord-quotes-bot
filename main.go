@@ -82,7 +82,7 @@ func handleQuote(s *discordgo.Session, r *discordgo.MessageReactionAdd) {
 		}
 	}
 
-	// Create a new webhook
+	// Create a new webhook to mimic the user in question
 	wh, err := s.WebhookCreate(qchn.ID, msg.Author.Username, msg.Author.AvatarURL(""))
 	if err != nil {
 		log.Panicf("FATAL 0005: could not create webhook: %s\n", err)
@@ -93,6 +93,9 @@ func handleQuote(s *discordgo.Session, r *discordgo.MessageReactionAdd) {
 		Content:   msg.Content,
 		Username:  fmt.Sprintf("%s || %s", msg.Author.Username, msg.Author.GlobalName),
 		AvatarURL: msg.Author.AvatarURL(""),
+		Components: msg.Components,
+		Embeds: msg.Embeds,
+		Attachments: msg.Attachments,
 	})
 	if err != nil {
 		log.Printf("WARNING: could not send message: %s\n", err)
