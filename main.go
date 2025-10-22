@@ -88,73 +88,34 @@ func handleQuote(s *discordgo.Session, r *discordgo.MessageReactionAdd) {
 		log.Panicf("FATAL 0005: could not create webhook: %s\n", err)
 	}
 
-	/*
-		fmt.Println(msg.Attachments)
-		for _, a := range msg.Attachments {
-			fmt.Println(a.ID, a.ContentType, a.Ephemeral, a.Filename, a.Height, a.Width, a.ProxyURL, a.Size, a.URL)
+	params := &discordgo.WebhookParams{
+		Content:   msg.Content,
+		Username:  fmt.Sprintf("%s || %s", msg.Author.Username, msg.Author.GlobalName),
+		AvatarURL: msg.Author.AvatarURL(""),
+	}
+	if len(msg.Attachments) > 0 {
+		params.Embeds = []*discordgo.MessageEmbed{
+			{
+				Title: msg.Attachments[0].Filename,
+				Image: &discordgo.MessageEmbedImage{
+					URL: msg.Attachments[0].URL,
+				},
+			},
 		}
-	*/
+	}
 
 	// Execute the webhook mimicing a user
-	if len(msg.Attachments) > 0 {
-		_, err = s.WebhookExecute(wh.ID, wh.Token, false, &discordgo.WebhookParams{
-			Content:   msg.Content,
-			Username:  fmt.Sprintf("%s || %s", msg.Author.Username, msg.Author.GlobalName),
-			AvatarURL: msg.Author.AvatarURL(""),
-			Attachments: []*discordgo.MessageAttachment{
-				{
-					ID:        msg.Attachments[0].ID,
-					Filename:  msg.Attachments[0].Filename,
-					Size:      msg.Attachments[0].Size,
-					URL:       msg.Attachments[0].URL,
-					ProxyURL:  msg.Attachments[0].ProxyURL,
-					Height:    msg.Attachments[0].Height,
-					Width:     msg.Attachments[0].Width,
-					Ephemeral: false,
-				},
-			},
-		})
-		if err != nil {
-			log.Printf("WARNING: could not send message: %s\n", err)
-			log.Printf("WARNING: attempting to delete webhook %s\n", wh.ID)
+	_, err = s.WebhookExecute(wh.ID, wh.Token, false, params)
+	if err != nil {
+		log.Printf("WARNING: could not send message: %s\n", err)
+		log.Printf("WARNING: attempting to delete webhook %s\n", wh.ID)
 
-			_, err = s.ChannelMessageSend(
-				r.ChannelID,
-				"Oops! Something went wrong while attempting to quote that message!",
-			)
-			if err != nil {
-				log.Fatalf("FATAL 0006: could not send message: %s\n", err)
-			}
-		}
-	} else {
-		_, err = s.WebhookExecute(wh.ID, wh.Token, false, &discordgo.WebhookParams{
-			Content:   msg.Content,
-			Username:  fmt.Sprintf("%s || %s", msg.Author.Username, msg.Author.GlobalName),
-			AvatarURL: msg.Author.AvatarURL(""),
-			Attachments: []*discordgo.MessageAttachment{
-				{
-					ID:        msg.Attachments[0].ID,
-					Filename:  msg.Attachments[0].Filename,
-					Size:      msg.Attachments[0].Size,
-					URL:       msg.Attachments[0].URL,
-					ProxyURL:  msg.Attachments[0].ProxyURL,
-					Height:    msg.Attachments[0].Height,
-					Width:     msg.Attachments[0].Width,
-					Ephemeral: false,
-				},
-			},
-		})
+		_, err = s.ChannelMessageSend(
+			r.ChannelID,
+			"Oops! Something went wrong while attempting to quote that message!",
+		)
 		if err != nil {
-			log.Printf("WARNING: could not send message: %s\n", err)
-			log.Printf("WARNING: attempting to delete webhook %s\n", wh.ID)
-
-			_, err = s.ChannelMessageSend(
-				r.ChannelID,
-				"Oops! Something went wrong while attempting to quote that message!",
-			)
-			if err != nil {
-				log.Fatalf("FATAL 0006: could not send message: %s\n", err)
-			}
+			log.Fatalf("FATAL 0006: could not send message: %s\n", err)
 		}
 	}
 
