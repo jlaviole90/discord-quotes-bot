@@ -94,13 +94,14 @@ func handleQuote(s *discordgo.Session, r *discordgo.MessageReactionAdd) {
 		fmt.Println(a.ID, a.ContentType, a.Ephemeral, a.Filename, a.Height, a.Width, a.ProxyURL, a.Size, a.URL)
 	}
 	*/
+	attCp := msg.Attachments
 
 	// Execute the webhook mimicing a user
 	_, err = s.WebhookExecute(wh.ID, wh.Token, false, &discordgo.WebhookParams{
 		Content:   msg.Content,
 		Username:  fmt.Sprintf("%s || %s", msg.Author.Username, msg.Author.GlobalName),
 		AvatarURL: msg.Author.AvatarURL(""),
-		Attachments: msg.Attachments,
+		Attachments: attCp,
 	})
 	if err != nil {
 		log.Printf("WARNING: could not send message: %s\n", err)
