@@ -88,9 +88,10 @@ func handleQuote(s *discordgo.Session, r *discordgo.MessageReactionAdd) {
 		log.Panicf("FATAL 0005: could not create webhook: %s\n", err)
 	}
 
-	fmt.Println(msg.Components)
-	fmt.Println(msg.Embeds)
 	fmt.Println(msg.Attachments)
+	for _, a := range msg.Attachments {
+		fmt.Println(a.ID, a.ContentType, a.Ephemeral, a.Filename, a.Height, a.Width, a.ProxyURL, a.Size, a.URL)
+	}
 
 	// Execute the webhook mimicing a user
 	_, err = s.WebhookExecute(wh.ID, wh.Token, false, &discordgo.WebhookParams{
