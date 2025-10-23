@@ -13,7 +13,7 @@ RUN rm -rf go-llama.cpp && \
     git clone https://github.com/go-skynet/go-llama.cpp.git && \
     cd go-llama.cpp && git submodule update --init --recursive
 
-RUN cd go-llama.cpp && make libbindings.a
+RUN cd go-llama.cpp && make libbinding.a
 
 ENV CGO_ENABLED=1
 ENV CC=gcc
