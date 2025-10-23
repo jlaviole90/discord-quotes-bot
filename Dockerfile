@@ -47,7 +47,9 @@ RUN --mount=type=cache,target=/go/pkg/mod/ \
     --mount=type=bind,source=go.mod,target=go.mod \
     go mod download -x
 
-RUN go build -v -o /bin/discord-quotes-bot /home/admin/discord-quotes-bot/
+RUN --mount=type=cache,target=/go/pkg/mod/ \
+    --mount=type=bind,target=. \
+    CGO_ENABLED=1 go build -o /bin/discord-quotes-bot .
 
 FROM --platform=$BUILDPLATFORM golang:${GO_VERSION}
 RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates libstdc++6 && rm -rf /var/lib/apt/lists/*
