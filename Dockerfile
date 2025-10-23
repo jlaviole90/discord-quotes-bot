@@ -21,6 +21,9 @@ ENV CXX=g++
 ENV CGO_CFLAGS="-I/src/go-llama.cpp/llama.cpp"
 ENV CGO_LDFLAGS="-L/src/go-llama.cpp -lbinding -lstdc++ -lm -lpthread"
 
+RUN cd /src/go-llama.cpp/llama.cpp && \
+    if [ -f common/common.h ]; && [ ! -f common.h ]; then ln -s common/common.h common.h; fi
+
 RUN go mod download
 RUN go build -v -o /bin/discord-quotes-bot .
 
