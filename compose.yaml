@@ -8,14 +8,18 @@
 # database or a cache. For examples, see the Awesome Compose repository:
 # https://github.com/docker/awesome-compose
 services:
-  server:
+  discord-quotes-bot:
     build:
       context: .
-      target: final
+      dockerfile: Dockerfile
+#      target: final
+    environment:
+      - CGO_ENABLED=1
+      PORT: 3000
+    volumes:
+      - ./models:/data/models:ro
     ports:
       - 3000:3000
-    environment:
-      PORT: 3000
     env_file:
       - ./.env
 
