@@ -2,64 +2,34 @@ ARG GO_VERSION=1.23.5
 ARG TARGETARCH
 
 FROM --platform=$BUILDPLATFORM golang:${GO_VERSION} AS build-cpp
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    build-essential cmake git wget pkg-config curl ca-certificates \
-    g++ \
-&& rm -rf /var/lib/apt/lists/*
 
 WORKDIR /src
 
-COPY . /src
+RUN apt-get update && apt-get install -y build-essential git cmake
 
-RUN git submodule update --init --recursive || echo "no submodules or not using git data in build context"
+COPY . .
 
-ARG BINDING_DIR="/home/admin/discord-quotes-bot/go-llama.cpp"
-RUN if [ -d "$BINDING_DIR" ]; then \
-    cd $BINDING_DIR && make libbinding.a \
-    else \
-        echo "Binding dir not found at $BINDING_DIR"; exit 1; \
-    fi
+RUN git submodule update --init --recursive || true
 
-FROM --platform=$BUILDPLATFORM golang:${GO_VERSION} AS build-go
+RUN cd go-llama.cpp && make libbindings.a
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    build-essential g++ ca-certificates \
-&& rm -rf /var/lib/apt/lists/*
-
-WORKDIR /app
-COPY --from=build-cpp /src /src
-
-RUN if [ -f /src/go-llama.cpp/llama.cpp/common/common.h ] && [ ! -f /src/go-llama.cpp/llama.cpp/common/common.h ]; then \
-        ln -s /src/go-llama.cpp/llama.cpp/common/common/h /src/go-llama.cpp/llama.cpp/common/common.h; \
-    fi
-
-ARG BINDING_ROOT=/src/go-llama.cpp
 ENV CGO_ENABLED=1
 ENV CC=gcc
 ENV CXX=g++
-ENV CGO_CFLAGS="-I${BINDING_ROOT}/llama.cpp"
-ENV CGO_LDFLAGS="-L${BINDING_ROOT} -lbinding -lstdc++ -lm -lpthread"
+ENV CGO_CFLAGS="-I/src/go-llama.cpp/llama.cpp"
+ENV CGO_LDFLAGS="-L/src/go-llama.cpp -lbinding -lstdc++ -lm -lpthread"
 
-RUN go env -w GOPRIVATE=*
-# Download dependencies as a separate step to take advantage of Docker's caching.
-# Leverage a cache mount to /go/pkg/mod/ to speed up subsequent builds.
-# Leverage bind mounts to go.sum and go.mod to avoid having to copy them into
-# the container.
-RUN --mount=type=cache,target=/go/pkg/mod/ \
-    --mount=type=bind,source=go.sum,target=go.sum \
-    --mount=type=bind,source=go.mod,target=go.mod \
-    go mod download -x
+RUN go mod download
+RUN go build -v -o /bin/discord-quotes-bot .
 
-RUN --mount=type=cache,target=/go/pkg/mod/ \
-    --mount=type=bind,target=. \
-    CGO_ENABLED=1 go build -o /bin/discord-quotes-bot .
+FROM debian:bullseye-slim
 
-FROM --platform=$BUILDPLATFORM golang:${GO_VERSION}
-RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates libstdc++6 && rm -rf /var/lib/apt/lists/*
-COPY --from=build-go /bin/discord-quotes-bot /usr/local/bin/discord-quotes-bot
+WORKDIR /app
 
-WORKDIR /data
-ENTRYPOINT ["/usr/local/bin/discord-quotes-bot"]
+COPY --from=build /out/discord-quotes-bot /app/discord-quotes-bot
+COPY --from=build /src/go-llama.cpp /app/go-llama.cpp
+
+CMD ["app/discord-quotes-bot"]
 
 # syntax=docker/dockerfile:1
 
