@@ -11,7 +11,7 @@ COPY . .
 
 RUN rm -rf go-llama.cpp && \
     git clone https://github.com/go-skynet/go-llama.cpp.git && \
-    cd go-llama.cpp && get submodule update --init --recursive
+    cd go-llama.cpp && git submodule update --init --recursive
 
 RUN cd go-llama.cpp && make libbindings.a
 
