@@ -3,11 +3,15 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      args:
+        BINDING_DIR: ./go-llama.cpp
     ports:
       - 3000:3000
     environment:
-      - CGO_ENABLED=1
-      - PORT=3000
+      CGO_ENABLED: 1
+      PORT: 3000
+      CC: "gcc"
+      CXX: "g++"
     volumes:
       - ./models:/data/models:ro
     env_file:
