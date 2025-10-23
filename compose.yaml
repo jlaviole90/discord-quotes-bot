@@ -7,7 +7,7 @@ services:
       - 3000:3000
     environment:
       - CGO_ENABLED=1
-      PORT: 3000
+      - PORT=3000
     volumes:
       - ./models:/data/models:ro
     env_file:
