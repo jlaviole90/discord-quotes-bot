@@ -1,7 +1,7 @@
 ARG GO_VERSION=1.23.5
 ARG TARGETARCH
 
-FROM --platform=$BUILDPLATFORM golang:${GO_VERSION} AS build-cpp
+FROM --platform=$BUILDPLATFORM golang:${GO_VERSION} AS build
 
 WORKDIR /src
 
