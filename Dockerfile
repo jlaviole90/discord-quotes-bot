@@ -29,14 +29,18 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 WORKDIR /app
 COPY --from=build-cpp /src /src
 
+RUN if [ -f /src/go-llama.cpp/llama.cpp/common/common.h ] && [ ! -f /src/go-llama.cpp/llama.cpp/common/common.h ]; then \
+        ln -s /src/go-llama.cpp/llama.cpp/common/common/h /src/go-llama.cpp/llama.cpp/common/common.h; \
+    fi
+
 ARG BINDING_DIR=/src/go-llama.cpp/llama.cpp
 ENV CGO_ENABLED=1
 ENV CC=gcc
 ENV CXX=g++
-
 ENV C_INCLUDE_PATH=/src/go-llama.cpp/llama.cpp
-ENV CGO_CFLAGS="-I/src/go-llama.cpp/llama.cpp"
 ENV LIBRARY_PATH=/src/go-llama.cpp/llama.cpp
+ENV CGO_CFLAGS="-I/src/go-llama.cpp/llama.cpp"
+ENV CGO_LDFLAGS="-L/src/go-llama.cpp/llama.cpp -lbinding -lstdc++ -lm -lbthread"
 
 RUN go env -w GOPRIVATE=*
 # Download dependencies as a separate step to take advantage of Docker's caching.
