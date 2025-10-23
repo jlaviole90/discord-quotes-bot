@@ -17,7 +17,7 @@ ARG BINDING_DIR="/home/admin/discord-quotes-bot/go-llama.cpp"
 RUN if [ -d "$BINDING_DIR" ]; then \
     cd $BINDING_DIR && make libbinding.a \
     else \
-        echo "Binding dir not found at $BINDING_DIR" \
+        echo "Binding dir not found at $BINDING_DIR"; exit 1; \
     fi
 
 FROM --platform=$BUILDPLATFORM golang:${GO_VERSION} as build-go
