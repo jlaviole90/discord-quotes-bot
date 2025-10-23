@@ -1,7 +1,7 @@
 ARG GO_VERSION=1.23.5
 ARG TARGETARCH
 
-FROM --platform=$BUILDPLATFORM golang:${GO_VERSION} as build-cpp
+FROM --platform=$BUILDPLATFORM golang:${GO_VERSION} AS build-cpp
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential cmake git wget pkg-config curl ca-certificates \
     g++ \
@@ -20,7 +20,7 @@ RUN if [ -d "$BINDING_DIR" ]; then \
         echo "Binding dir not found at $BINDING_DIR"; exit 1; \
     fi
 
-FROM --platform=$BUILDPLATFORM golang:${GO_VERSION} as build-go
+FROM --platform=$BUILDPLATFORM golang:${GO_VERSION} AS build-go
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential g++ ca-certificates \
@@ -31,7 +31,7 @@ COPY --from=build-cpp /src /src
 
 ARG BINDING_DIR=/src/thirdparty/go-llama.cpp
 ENV CGO_ENABLED=1
-ENV CC=gcc
+ENV CC=gc/
 ENV CXX=g++
 
 ENV C_INCLUDE_PATH=$BINDING_DIR
@@ -47,7 +47,7 @@ RUN --mount=type=cache,target=/go/pkg/mod/ \
     --mount=type=bind,source=go.mod,target=go.mod \
     go mod download -x
 
-RUN go build -v -o /bin/discord-quotes-bot .
+RUN go build -v -o /bin/discord-quotes-bot ./
 
 FROM --platform=$BUILDPLATFORM golang:${GO_VERSION}
 RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates libstdc++6 && rm -rf /var/lib/apt/lists/*
