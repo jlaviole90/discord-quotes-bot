@@ -1,13 +1,16 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"log"
 	"os"
 	"os/signal"
+	"runtime"
 	"strings"
 
 	"github.com/bwmarrin/discordgo"
+	llama "github.com/go-skynet/go-llama.cpp"
 )
 
 func main() {
@@ -20,6 +23,7 @@ func main() {
 	})
 
 	session.AddHandler(handleQuote)
+	session.AddHandler(answerQuestion)
 
 	err := session.Open()
 	if err != nil {
@@ -135,6 +139,53 @@ func handleQuote(s *discordgo.Session, r *discordgo.MessageReactionAdd) {
 		}
 		log.Fatalf("FATAL 0008: could not delete webhook: %s", err)
 	}
+}
+
+func answerQuestion(s *discordgo.Session, m *discordgo.MessageCreate) {
+	if !strings.HasPrefix(m.Content, "Georgibot, ") {
+		return
+	}
+
+	var (
+		threads = 4
+		tokens = 128
+		gpulayers = 0
+		seed = -1
+	)
+	var model string
+
+	flags := flag.NewFlagSet(os.Args[0], flag.ExitOnError)
+	flags.StringVar(&model, "m", "./models/qwen/qwen2.5-3b-instruct.Q4_K_M.gguf", "path to the model file to load")
+	flags.IntVar(&gpulayers, "ngl", 0, "Number of GPU layers to use")
+	flags.IntVar(&threads, "t", runtime.NumCPU(), "Number of threads to use during computation")
+	flags.IntVar(&tokens, "n", 512, "Number of tokens to predict")
+	flags.IntVar(&seed, "s", -1, "Predict RNG seed, -1 for random seed")
+
+	err := flags.Parse(os.Args[1:])
+	if err != nil {
+		log.Fatalf("Error paring program arguments: %s\n", err)
+	}
+
+	l, err := llama.New(model, llama.EnableF16Memory, llama.SetContext(128), llama.EnableEmbeddings, llama.SetGPULayers(gpulayers))
+	if err != nil {
+		log.Fatalf("Loading model failed: %s\n", err)
+	}
+
+	res, err := l.Predict(m.Content, llama.Debug, llama.SetTokenCallback(func(token string) bool {
+		log.Printf(token)
+		return true
+	}), llama.SetTokens(tokens), llama.SetThreads(threads), llama.SetTopK(90), llama.SetTopP(0.86), llama.SetStopWords("llama"), llama.SetSeed(seed))
+	if err != nil {
+		panic(err)
+	}
+	/*
+	embeds, err := l.Embeddings(text)
+	if err != nil {
+		log.Fatalf("Failed to get embeddings: %s\n", err)
+	}
+	*/
+
+	s.ChannelMessageSendReply(m.ChannelID, res, m.MessageReference)
 }
 
 func getQuotesChannel(chns []*discordgo.Channel) (*discordgo.Channel, error) {
