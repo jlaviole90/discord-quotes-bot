@@ -31,7 +31,7 @@ COPY --from=build-cpp /src /src
 
 ARG BINDING_DIR=/src/thirdparty/go-llama.cpp
 ENV CGO_ENABLED=1
-ENV CC=gc/
+ENV CC=gcc
 ENV CXX=g++
 
 ENV C_INCLUDE_PATH=$BINDING_DIR
