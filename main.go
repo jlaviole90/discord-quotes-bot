@@ -1,5 +1,7 @@
 package main
 
+// #cgo CFLAGS: -I/home/admin/discord-quotes-bot/go-llama.cpp
+// #cgo LDFLAGS: -L/home/admin/discord-quotes-bot/go-llama.cpp -lbinding -lstdc++ -lpthread -lm
 import (
 	"flag"
 	"fmt"
