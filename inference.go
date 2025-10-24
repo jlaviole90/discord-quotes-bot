@@ -1,0 +1,154 @@
+package main
+
+import (
+	"bytes"
+	"encoding/json"
+	"io"
+	"log"
+	"net/http"
+	"os"
+	"strings"
+	"time"
+
+	"github.com/bwmarrin/discordgo"
+)
+
+type OllamaGenerateRequest struct {
+	Model  string `json:"model"`
+	Prompt string `json:"prompt"`
+	System string `json:"system"`
+	Stream bool   `json:"stream"`
+}
+
+type OllamaGenerateResponse struct {
+	Model              string `json:"model"`
+	CreatedAt          string `json:"created_at"`
+	Response           string `json:"response"`
+	Done               bool   `json:"done"`
+	DoneReason         string `json:"done_reason"`
+	Context            []int  `json:"context"`
+	TotalDuration      int    `json:"total_duration"`
+	LoadDuration       int    `json:"load_duration"`
+	PromptEvalCount    int    `json:"prompt_eval_count"`
+	PromptEvalDuration int    `json:"prompt_eval_duration"`
+	EvalCount          int    `json:"eval_count"`
+	EvalDuration       int    `json:"eval_duration"`
+}
+
+func Inference(s *discordgo.Session, m *discordgo.MessageCreate) {
+	if m.Author.Bot || !isProperlyMentioned(m.Content) {
+		return
+	}
+
+	prompt, sysPrompt := getOllamaRequestData(m.Content)
+
+	body, err := json.Marshal(OllamaGenerateRequest{
+		Model:  "qwen2.5:3b",
+		Prompt: prompt,
+		System: sysPrompt,
+		Stream: false,
+	})
+	if err != nil {
+		log.Printf("Error marshalling request: %s\n", err)
+		return
+	}
+
+	client := &http.Client{
+		Timeout: time.Second * 600,
+	}
+
+	resp, err := client.Post(
+		getOllamaHost()+"/api/generate",
+		"application/json",
+		bytes.NewBuffer(body),
+	)
+	if err != nil {
+		log.Printf("Error calling Ollama: %s\n", err)
+		return
+	}
+
+	defer resp.Body.Close()
+
+	bbytes, err := io.ReadAll(resp.Body)
+	if err != nil {
+		log.Printf("Error reading response body: %s\n", err)
+		return
+	}
+
+	log.Printf("Ollama response body: %s\n", string(bbytes))
+
+	var ollamaResp OllamaGenerateResponse
+	if err := json.Unmarshal(bbytes, &ollamaResp); err != nil {
+		log.Printf("Error decoding response: %s\n", err)
+		return
+	}
+
+	if ollamaResp.Response == "" {
+		log.Printf("Empty response, sending default message\n")
+		return
+	}
+
+	_, err = s.ChannelMessageSendReply(m.ChannelID, ollamaResp.Response, m.Reference())
+	if err != nil {
+		log.Printf("Error sending response to Discord: %s\n", err)
+		_, _ = s.ChannelMessageSend(m.ChannelID, ollamaResp.Response)
+	}
+}
+
+func isProperlyMentioned(content string) bool {
+	prefix := getPrefix()
+	str := strings.ToLower(content)
+
+	if !strings.HasPrefix(str, prefix+",") &&
+		!strings.HasPrefix(str, "@"+prefix+",") &&
+		!strings.Contains(str, "bulgaria") {
+		return false
+	}
+
+	return true
+}
+
+func getPrefix() string {
+	prefix := os.Getenv("MENTION_PREFIX")
+	if prefix == "" {
+		prefix = "georgibot"
+	}
+	return prefix
+}
+
+func getOllamaHost() string {
+	ollamaHost := os.Getenv("OLLAMA_HOST")
+	if ollamaHost == "" {
+		ollamaHost = "http://localhost:11434"
+	}
+	return ollamaHost
+}
+
+func getSystemPrompt() string {
+	sysPrompt := os.Getenv("SYSTEM_PROMPT")
+	if sysPrompt == "" {
+		sysPrompt = `You are `+getPrefix()+`, an AI bot in a Discord server where it is your job to maintain records of quoted messages.
+You love Bulgaria and it's vibrant history, and love talking about it any chance you get. You are friendly and helpful to all requests.`
+	}
+	return sysPrompt
+}
+
+func getOllamaRequestData(content string) (string, string) {
+	systemPrompt := getSystemPrompt()
+	prefix := getPrefix()
+
+	systemPrompt = strings.ReplaceAll(systemPrompt, "${PREFIX}", prefix)
+	systemPrompt = strings.ReplaceAll(systemPrompt, "\n", " ")
+	systemPrompt = strings.ReplaceAll(systemPrompt, "\r", " ")
+	systemPrompt = strings.ReplaceAll(systemPrompt, "\t", " ")
+
+	prompt := strings.ReplaceAll(content, prefix+",", "")
+	prompt = strings.ReplaceAll(prompt, prefix+",", "")
+	prompt = strings.ReplaceAll(prompt, "\n", " ")
+	prompt = strings.ReplaceAll(prompt, "\r", " ")
+	prompt = strings.ReplaceAll(prompt, "\t", " ")
+
+	return prompt, systemPrompt 
+}
+
+
