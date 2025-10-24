@@ -206,19 +206,21 @@ func getOllamaRequestData(content string) (string, string) {
 	systemPrompt := getSystemPrompt()
 	prefix := getPrefix()
 
+	systemPrompt = strings.ReplaceAll(systemPrompt, "${PREFIX}", prefix)
+
 	prompt := strings.ReplaceAll(content, prefix+",", "")
 	prompt = strings.ReplaceAll(prompt, prefix+",", "")
 
-	sysPrompt := strings.ReplaceAll(systemPrompt, "\n", " ")
+	systemPrompt = strings.ReplaceAll(systemPrompt, "\n", " ")
 	prompt = strings.ReplaceAll(prompt, "\n", " ")
 
-	sysPrompt = strings.ReplaceAll(sysPrompt, "\r", " ")
+	systemPrompt = strings.ReplaceAll(systemPrompt, "\r", " ")
 	prompt = strings.ReplaceAll(prompt, "\r", " ")
 
-	sysPrompt = strings.ReplaceAll(sysPrompt, "\t", " ")
+	systemPrompt = strings.ReplaceAll(systemPrompt, "\t", " ")
 	prompt = strings.ReplaceAll(prompt, "\t", " ")
 
-	return prompt, sysPrompt
+	return prompt, systemPrompt 
 }
 
 func answerQuestion(s *discordgo.Session, m *discordgo.MessageCreate) {
