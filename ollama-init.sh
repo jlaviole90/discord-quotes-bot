@@ -9,6 +9,19 @@ done
 
 echo "Ollama started!"
 
+echo "Checking for GGUF file..."
+ls -lah /models/qwen/ || echo "Directory /models/qwen/ not found!"
+echo ""
+
+if [ -f "/models/qwen/qwen2.5-3b-instruct.Q4_K_M.gguf" ]; then
+    echo "Found GGUF file: /models/qwen/qwen2.5-3b-instruct.Q4_K_M.gguf"
+else
+    echo "X GGUF file not found at /models/qwen/qwen2.5-3b-instruct.Q4_K_M.gguf"
+    echo "Available files in /models:"
+    ls -lah /models/ || echo "Cannot access /models/"
+    exit 1
+fi
+
 if ollama list | grep -q "qwen2.5:3b"; then
     echo "Model qwen2.5:3b already exists."
 else
