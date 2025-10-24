@@ -5,8 +5,10 @@ services:
     volumes:
       - ~/models:/models
       - ollama_data:/root/.ollama
+      - ./ollama-init.sh:/ollama-init.sh
     ports:
       - 11434:11434
+    entrypoint: ["/bin/bash", "/ollama-init.sh"]
     restart: unless-stopped
 
   discord-quotes-bot:
