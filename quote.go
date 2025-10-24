@@ -17,31 +17,27 @@ func Quote(s *discordgo.Session, r *discordgo.MessageReactionAdd) {
 
 	msg, err := s.ChannelMessage(r.ChannelID, r.MessageID)
 	if err != nil {
-		log.Fatalf("FATAL 0001: could not get message: %s\n", err)
+		log.Printf("FATAL 0001: could not get message: %s\n", err)
+		return
 	}
 
 	// Don't quote bots
 	if msg.Author.Bot && msg.Author.ID != s.State.User.ID {
-		_, err = s.ChannelMessageSend(r.ChannelID, "Sorry, I don't quote application messages!")
-		if err != nil {
-			log.Fatalf("FATAL 0002: could not send message: %s\n", err)
-		}
+		_, _ = s.ChannelMessageSend(r.ChannelID, "Sorry, I don't quote application messages!")
 		return
 	}
 
 	chns, err := s.GuildChannels(r.GuildID)
 	if err != nil {
-		log.Fatalf("FATAL 0003: could not get channels: %s\n", err)
+		log.Printf("FATAL 0003: could not get channels: %s\n", err)
+		return
 	}
 
 	// Find the quotes channel
 	// If we don't find a quotes channel, send a message so the user can know to create one
 	qchn, err := getQuotesChannel(chns)
 	if err != nil {
-		_, err = s.ChannelMessageSend(r.ChannelID, "Sorry, I couldn't find the quotes channel!")
-		if err != nil {
-			log.Fatalf("FATAL 0004: could not send message: %s\n", err)
-		}
+		_, _ = s.ChannelMessageSend(r.ChannelID, "Sorry, I couldn't find the quotes channel!")
 		return
 	}
 
@@ -79,33 +75,25 @@ func Quote(s *discordgo.Session, r *discordgo.MessageReactionAdd) {
 	// Execute the webhook mimicing a user
 	_, err = s.WebhookExecute(wh.ID, wh.Token, false, params)
 	if err != nil {
-		log.Printf("WARNING: could not send message: %s\n", err)
-		log.Printf("WARNING: attempting to delete webhook %s\n", wh.ID)
+		log.Printf("WARNING: could not execute webhook: %s\n", err)
 
-		_, err = s.ChannelMessageSend(
+		_, _ = s.ChannelMessageSend(
 			r.ChannelID,
 			"Oops! Something went wrong while attempting to quote that message!",
 		)
-		if err != nil {
-			log.Fatalf("FATAL 0006: could not send message: %s\n", err)
-		}
 	}
 
 	// Clean up after yourself
 	err = s.WebhookDelete(wh.ID)
 	if err != nil {
-		_, err = s.ChannelMessageSend(
+		_, _ = s.ChannelMessageSend(
 			r.ChannelID,
 			fmt.Sprintf(
-				"Oops! Something went wrong while attempting to delete the webhook %s. You may way to manually delete it.",
+				"Oops! Something went wrong while attempting to delete the webhook %s. You may want to manually delete it.",
 				wh.Name,
 			),
 		)
 		log.Printf("WARNING: could not delete webhook: %s\n", err)
-		if err != nil {
-			log.Fatalf("FATAL 0007: could not send message: %s\n", err)
-		}
-		log.Fatalf("FATAL 0008: could not delete webhook: %s", err)
 	}
 }
 

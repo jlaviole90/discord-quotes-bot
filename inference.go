@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/bwmarrin/discordgo"
@@ -18,6 +19,7 @@ type OllamaGenerateRequest struct {
 	Prompt string `json:"prompt"`
 	System string `json:"system"`
 	Stream bool   `json:"stream"`
+	Context []int `json:"context"`
 }
 
 type OllamaGenerateResponse struct {
@@ -35,6 +37,13 @@ type OllamaGenerateResponse struct {
 	EvalDuration       int    `json:"eval_duration"`
 }
 
+var (
+	channelContext = make(map[string][]int)
+	channelActivity = make(map[string]time.Time)
+	contextMutex = sync.RWMutex{}
+	contextTimeout = time.Minute * 30 
+)
+
 func Inference(s *discordgo.Session, m *discordgo.MessageCreate) {
 	if m.Author.Bot || !isProperlyMentioned(m.Content) {
 		return
@@ -42,26 +51,69 @@ func Inference(s *discordgo.Session, m *discordgo.MessageCreate) {
 
 	prompt, sysPrompt := getOllamaRequestData(m.Content)
 
+	contextMutex.RLock()
+	last := channelActivity[m.ChannelID]
+	contextMutex.RUnlock()
+
+	if time.Since(last) > contextTimeout {
+		contextMutex.Lock()
+		delete(channelContext, m.ChannelID)
+		delete(channelActivity, m.ChannelID)
+		contextMutex.Unlock()
+		log.Printf("Cleared stale channel context for channel %s\n", m.ChannelID)
+	}
+
+	contextMutex.RLock()
+	ctx := channelContext[m.ChannelID]
+	contextMutex.RUnlock()
+
 	body, err := json.Marshal(OllamaGenerateRequest{
 		Model:  "qwen2.5:3b",
 		Prompt: prompt,
 		System: sysPrompt,
 		Stream: false,
+		Context: ctx,
 	})
 	if err != nil {
 		log.Printf("Error marshalling request: %s\n", err)
 		return
 	}
 
+	if len(prompt) > 1000 {
+		log.Printf("Prompt exceeds 1000 characters. Aborting.")
+		_, _ = s.ChannelMessageSendReply(
+			m.ChannelID,
+			"Yeah, not reading all that. 1000 characters or less please.",
+			m.Reference(),
+		)
+	}
+
+	done := make(chan bool)
+	go func() {
+		ticker := time.NewTicker(5 * time.Second)
+		defer ticker.Stop()
+
+		for {
+			select {
+			case <-done:
+				return
+			case <-ticker.C:
+				_ = s.ChannelTyping(m.ChannelID)
+			}
+		}
+	}()
+
 	client := &http.Client{
 		Timeout: time.Second * 600,
 	}
-
 	resp, err := client.Post(
 		getOllamaHost()+"/api/generate",
 		"application/json",
 		bytes.NewBuffer(body),
 	)
+
+	close(done)
+
 	if err != nil {
 		log.Printf("Error calling Ollama: %s\n", err)
 		return
@@ -87,6 +139,11 @@ func Inference(s *discordgo.Session, m *discordgo.MessageCreate) {
 		log.Printf("Empty response, sending default message\n")
 		return
 	}
+
+	contextMutex.Lock()
+	channelContext[m.ChannelID] = ollamaResp.Context
+	channelActivity[m.ChannelID] = time.Now()
+	contextMutex.Unlock()
 
 	_, err = s.ChannelMessageSendReply(m.ChannelID, ollamaResp.Response, m.Reference())
 	if err != nil {
@@ -127,7 +184,7 @@ func getOllamaHost() string {
 func getSystemPrompt() string {
 	sysPrompt := os.Getenv("SYSTEM_PROMPT")
 	if sysPrompt == "" {
-		sysPrompt = `You are `+getPrefix()+`, an AI bot in a Discord server where it is your job to maintain records of quoted messages.
+		sysPrompt = `You are ` + getPrefix() + `, an AI bot in a Discord server where it is your job to maintain records of quoted messages.
 You love Bulgaria and it's vibrant history, and love talking about it any chance you get. You are friendly and helpful to all requests.`
 	}
 	return sysPrompt
@@ -148,7 +205,5 @@ func getOllamaRequestData(content string) (string, string) {
 	prompt = strings.ReplaceAll(prompt, "\r", " ")
 	prompt = strings.ReplaceAll(prompt, "\t", " ")
 
-	return prompt, systemPrompt 
+	return prompt, systemPrompt
 }
-
-

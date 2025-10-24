@@ -9,9 +9,12 @@ import (
 )
 
 func main() {
-	session, _ := discordgo.New(
+	session, err := discordgo.New(
 		"Bot " + os.Getenv("DISCORD_TOKEN"),
 	)
+	if err != nil {
+		log.Fatalf("Could not create session. Check your token: %s", err)
+	}
 
 	session.AddHandler(func(s *discordgo.Session, r *discordgo.Ready) {
 		log.Printf("Logged in as %s", r.User.String())
@@ -23,7 +26,7 @@ func main() {
 	// inference.go
 	session.AddHandler(Inference)
 
-	err := session.Open()
+	err = session.Open()
 	if err != nil {
 		log.Fatalf("could not open session: %s", err)
 	}
