@@ -167,6 +167,9 @@ type OllamaGenerateResponse struct {
 
 func isProperlyMentioned(content string) bool {
 	prefix := os.Getenv("MENTION_PREFIX")
+	if prefix == "" {
+		prefix = "georgibot"
+	}
 	str := strings.ToLower(content)
 	if !strings.HasPrefix(str, prefix+",") &&
 		!strings.HasPrefix(str, "@"+prefix+",") &&
