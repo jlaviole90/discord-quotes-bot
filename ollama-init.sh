@@ -26,7 +26,8 @@ if ollama list | grep -q "qwen2.5:3b"; then
     echo "Model qwen2.5:3b already exists."
 else
     echo "Creating model qwen2.5:3b from GGUF file..."
-    ollama create qwen2.5:3b -f - << 'EOF'
+
+    cat > /tmp/Modelfile << 'EOF'
 FROM /models/qwen/qwen2.5-3b-instruct.Q4_K_M.gguf
 
 TEMPLATE """{{ if .System }}<|im_start|>system
@@ -42,7 +43,14 @@ PARAMETER temperature 0.7
 PARAMETER top_p 0.8
 PARAMETER top_k 20
 EOF
-    ehcho "Model created successfully!"
+    echo "Modelfile contents:"
+    cat /tmp/Modelfile
+    echo ""
+
+    echo "Running: ollama create qwen2.5:3b -f /tmp/Modelfile"
+    ollama create qwen2.5:3b -f /tmp/Modelfile
+
+    echo "Completed model creation script."
 fi
 
 echo "Available models:"
