@@ -11,7 +11,12 @@ COPY . .
 
 RUN rm -rf go-llama.cpp && \
     git clone https://github.com/go-skynet/go-llama.cpp.git && \
-    cd go-llama.cpp && git submodule update --init --recursive
+    cd go-llama.cpp && \
+    git submodule update --init --recursive && \
+    cd llama.cpp && \
+    git fetch origin && \
+    git checkout master && \
+    git pull origin master
 
 RUN cd /src/go-llama.cpp && \
     sed -i 's|#include "common.h"|#include "common/common.h"|g' binding.cpp && \
@@ -22,7 +27,7 @@ RUN cd /src/go-llama.cpp && \
 ENV CGO_ENABLED=1
 ENV CC=gcc
 ENV CXX=g++
-ENV CGO_CFLAGS="-I/src/go-llama.cpp/llama.cpp -I/src/go-llama.cpp/common"
+ENV CGO_CFLAGS="-I/src/go-llama.cpp/llama.cpp -I/src/go-llama.cpp/llama.cpp/common"
 ENV CGO_LDFLAGS="-L/src/go-llama.cpp -lbinding -lstdc++ -lm -lpthread"
 
 RUN cd go-llama.cpp && make libbinding.a
