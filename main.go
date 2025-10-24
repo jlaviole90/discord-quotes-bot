@@ -154,7 +154,7 @@ type OllamaGenerateResponse struct {
 	Response           string `json:"response"`
 	Done               bool   `json:"done"`
 	DoneReason         string `json:"done_reason"`
-	Context            string `json:"context"`
+	Context            []int  `json:"context"`
 	TotalDuration      int    `json:"total_duration"`
 	LoadDuration       int    `json:"load_duration"`
 	PromptEvalCount    int    `json:"prompt_eval_count"`
