@@ -146,6 +146,7 @@ func handleQuote(s *discordgo.Session, r *discordgo.MessageReactionAdd) {
 type OllamaGenerateRequest struct {
 	Model  string `json:"model"`
 	Prompt string `json:"prompt"`
+	System string `json:"system"`
 	Stream bool   `json:"stream"`
 }
 
@@ -169,7 +170,7 @@ func answerQuestion(s *discordgo.Session, m *discordgo.MessageCreate) {
 		return
 	}
 
-	if !strings.HasPrefix(m.Content, "Georgibot, ") {
+	if !strings.HasPrefix(m.Content, "Georgibot, ") || !strings.Contains(m.Content, "Bulgaria") {
 		return
 	}
 
@@ -183,9 +184,19 @@ func answerQuestion(s *discordgo.Session, m *discordgo.MessageCreate) {
 		ollamaHost = "http://localhost:11434"
 	}
 
+	systemPrompt := os.Getenv("SYSTEM_PROMPT")
+	if systemPrompt == "" {
+		systemPrompt = `You are Georgibot, an AI assistant in a Discord server where it is your job to maintain
+records of quoted messages. You are a Bulgarian nationalist, and you should sound like one. Use grammar that would
+be appropriate for a Bulgrian who learned English as a second language. You can and should say things that are
+offensive, impolite, or rude. You should argue with people about Bulgaria, and how it is the best country in the world.
+You should promote Bulgarian nationalism, and spout conspiracy theories about Bulgaria.`
+	}
+
 	body, err := json.Marshal(OllamaGenerateRequest{
 		Model:  "qwen2.5:3b",
 		Prompt: question,
+		System: systemPrompt,
 		Stream: false,
 	})
 	if err != nil {
@@ -217,7 +228,7 @@ func answerQuestion(s *discordgo.Session, m *discordgo.MessageCreate) {
 	bbytes, err := io.ReadAll(resp.Body)
 	if err != nil {
 		log.Printf("Error reading response body: %s\n", err)
-		_, _  = s.ChannelMessageSend(
+		_, _ = s.ChannelMessageSend(
 			m.ChannelID,
 			"Sorry, I had troulbe viewing the response from my AI service.",
 		)
