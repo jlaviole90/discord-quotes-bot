@@ -13,14 +13,19 @@ if curl -s http://ollama:11434/api/tags | grep -q "qwen2.5:3b"; then
 else
     echo "Creating model qwen2.5:3b from GGUF file..."
 
-    MODELFILE_CONTENT=$(cat /app/Modelfile | sed 's/"/\\"/g' | awk '{printf "%s\\n", $0}' | sed 's/\\n$//')
+    MODELFILE_JSON=$(cat /app/Modelfile) | jq -Rs .)
 
     cat > /tmp/payload.json << EOF
 {
     "name": "qwen2.5:3b",
-    "modelfile": "${MODELFILE_CONTENT}"
+    "modelfile": "${MODELFILE_JSON}"
 }
 EOF
+
+    echo "Payload content:"
+    cat /tmp/payload.json
+    echo ""
+
     echo "Sending model creation request to Ollama..."
     curl -X POST http://ollama:11434/api/create \
         -H "Content-Type: application/json" \

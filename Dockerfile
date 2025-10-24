@@ -17,6 +17,7 @@ WORKDIR /app
 RUN apt-get update && apt-get install -y \
     ca-certificates \
     curl \
+    jq \
     && rm -rf /var/lib/apt/lists/*
 
 COPY --from=build /bin/discord-quotes-bot /app/discord-quotes-bot
