@@ -1,16 +1,19 @@
 package main
 
 import (
+	"bytes"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"log"
+	"net/http"
 	"os"
 	"os/signal"
 	"runtime"
 	"strings"
 
 	"github.com/bwmarrin/discordgo"
-	llama "github.com/go-skynet/go-llama.cpp"
+	"github.com/go-skynet/go-llama.cpp"
 )
 
 func main() {
@@ -141,51 +144,65 @@ func handleQuote(s *discordgo.Session, r *discordgo.MessageReactionAdd) {
 	}
 }
 
+type OllamaGenerateRequest struct {
+	Model  string `json:"model"`
+	Prompt string `json:"prompt"`
+	Stream bool   `json:"stream"`
+}
+
+type OllamaGenerateResponse struct {
+	Response string `json:"response"`
+	Done     bool   `json:"done"`
+}
+
 func answerQuestion(s *discordgo.Session, m *discordgo.MessageCreate) {
+	if m.Author.Bot {
+		return
+	}
+
 	if !strings.HasPrefix(m.Content, "Georgibot, ") {
 		return
 	}
 
-	var (
-		threads = 4
-		tokens = 128
-		gpulayers = 0
-		seed = -1
-	)
-	var model string
-
-	flags := flag.NewFlagSet(os.Args[0], flag.ExitOnError)
-	flags.StringVar(&model, "m", "/data/models/qwen/qwen2.5-3b-instruct.Q4_K_M.gguf", "path to the model file to load")
-	flags.IntVar(&gpulayers, "ngl", 0, "Number of GPU layers to use")
-	flags.IntVar(&threads, "t", runtime.NumCPU(), "Number of threads to use during computation")
-	flags.IntVar(&tokens, "n", 512, "Number of tokens to predict")
-	flags.IntVar(&seed, "s", -1, "Predict RNG seed, -1 for random seed")
-
-	err := flags.Parse(os.Args[1:])
-	if err != nil {
-		log.Fatalf("Error paring program arguments: %s\n", err)
+	question := strings.TrimPrefix(m.Content, "Georgibot, ")
+	if question == "" {
+		return	
 	}
 
-	l, err := llama.New(model, llama.EnableF16Memory, llama.SetContext(128), llama.EnableEmbeddings, llama.SetGPULayers(gpulayers))
-	if err != nil {
-		log.Fatalf("Loading model failed: %s\n", err)
+	ollamaHost := os.Getenv("OLLAMA_HOST")
+	if ollamaHost == "" {
+		ollamaHost = "http://localhost:11434"
 	}
 
-	res, err := l.Predict(m.Content, llama.Debug, llama.SetTokenCallback(func(token string) bool {
-		log.Printf(token)
-		return true
-	}), llama.SetTokens(tokens), llama.SetThreads(threads), llama.SetTopK(90), llama.SetTopP(0.86), llama.SetStopWords("llama"), llama.SetSeed(seed))
+	body, err := json.Marshal(OllamaGenerateRequest{
+		Model: "qwen2.5:3b",
+		Prompt: question,
+		Stream: false,
+	})
 	if err != nil {
-		panic(err)
+		log.Printf("Error marshalling request: %s\n", err)
+		s.ChannelMessageSend(m.ChannelID, "Sorry, I had trouble processing your question.")
+		return
 	}
-	/*
-	embeds, err := l.Embeddings(text)
-	if err != nil {
-		log.Fatalf("Failed to get embeddings: %s\n", err)
-	}
-	*/
 
-	s.ChannelMessageSendReply(m.ChannelID, res, m.MessageReference)
+	resp, err := http.Post(ollamaHost+"/api/generate", "application/json", bytes.NewBuffer(body))
+	if err != nil {
+		log.Printf("Error calling Ollama: %s\n", err)
+		s.ChannelMessageSend(m.ChannelID, "Sorry, I couldn't connect to the AI service.")
+	}
+	defer resp.Body.Close()
+
+	var ollamaResp OllamaGenerateResponse
+	if err := json.NewDecoder(resp.Body).Decode(&ollamaResp); err != nil {
+		log.Printf("Error decoding response: %s\n", err)
+		s.ChannelMessageSend(m.ChannelID, "Sorry, I had trouble processing your question.")
+	}
+
+	if ollamaResp.Response != "" {
+		s.ChannelMessageSendReply(m.ChannelID, ollamaResp.Response, m.MessageReference)
+	} else {
+		s.ChannelMessageSend(m.ChannelID, "Sorry, I didn't get a response from my AI service.")
+	}
 }
 
 func getQuotesChannel(chns []*discordgo.Channel) (*discordgo.Channel, error) {
