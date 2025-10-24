@@ -165,17 +165,22 @@ type OllamaGenerateResponse struct {
 	EvalDuration       int    `json:"eval_duration"`
 }
 
+func isProperlyMentioned(content string) bool {
+	str := strings.ToLower(content)
+	if !strings.HasPrefix(str, "georgibot,") &&
+		!strings.Contains(str, "bulgaria") {
+		return false
+	}
+
+	return true
+}
+
 func answerQuestion(s *discordgo.Session, m *discordgo.MessageCreate) {
 	if m.Author.Bot {
 		return
 	}
 
-	if !strings.HasPrefix(m.Content, "Georgibot, ") {
-		return
-	}
-
-	question := strings.TrimPrefix(m.Content, "Georgibot, ")
-	if question == "" {
+	if !isProperlyMentioned(m.Content) {
 		return
 	}
 
@@ -193,9 +198,14 @@ func answerQuestion(s *discordgo.Session, m *discordgo.MessageCreate) {
 		impolite, or rude. You should promote Bulgarian nationalism, and spout conspiracy theories about Bulgaria.`
 	}
 
+	prompt := strings.ReplaceAll(m.Content, "Georgibot,", "")
+	prompt = strings.ReplaceAll(prompt, "georgibot,", "")
+	prompt = strings.ReplaceAll(prompt, "\n", "")	
+	prompt = strings.ReplaceAll(prompt, "\r", "")
+
 	body, err := json.Marshal(OllamaGenerateRequest{
 		Model:  "qwen2.5:3b",
-		Prompt: question,
+		Prompt: prompt,
 		System: systemPrompt,
 		Stream: false,
 	})
@@ -214,7 +224,7 @@ func answerQuestion(s *discordgo.Session, m *discordgo.MessageCreate) {
 	log.Printf("Sending request to Ollama: %s\n", string(body))
 
 	client := &http.Client{
-		Timeout: time.Second * 120,
+		Timeout: time.Second * 600,
 	}
 	resp, err := client.Post(ollamaHost+"/api/generate", "application/json", bytes.NewBuffer(body))
 	if err != nil {
