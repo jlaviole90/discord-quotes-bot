@@ -6,7 +6,7 @@ services:
       #args:
       #  BINDING_DIR: ./go-llama.cpp
     volumes:
-      - ./models:/data/models:ro
+      - ~/models:/data/models:ro
     environment:
       CGO_ENABLED: 1
       PORT: 3000

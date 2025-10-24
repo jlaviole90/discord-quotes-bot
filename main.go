@@ -155,7 +155,7 @@ func answerQuestion(s *discordgo.Session, m *discordgo.MessageCreate) {
 	var model string
 
 	flags := flag.NewFlagSet(os.Args[0], flag.ExitOnError)
-	flags.StringVar(&model, "m", "./models/qwen/qwen2.5-3b-instruct.Q4_K_M.gguf", "path to the model file to load")
+	flags.StringVar(&model, "m", "data/models/qwen/qwen2.5-3b-instruct.Q4_K_M.gguf", "path to the model file to load")
 	flags.IntVar(&gpulayers, "ngl", 0, "Number of GPU layers to use")
 	flags.IntVar(&threads, "t", runtime.NumCPU(), "Number of threads to use during computation")
 	flags.IntVar(&tokens, "n", 512, "Number of tokens to predict")
