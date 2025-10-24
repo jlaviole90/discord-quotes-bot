@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/signal"
 	"strings"
+	"time"
 
 	"github.com/bwmarrin/discordgo"
 )
@@ -201,19 +202,22 @@ func answerQuestion(s *discordgo.Session, m *discordgo.MessageCreate) {
 
 	log.Printf("Sending request to Ollama: %s\n", string(body))
 
-	resp, err := http.Post(ollamaHost+"/api/generate", "application/json", bytes.NewBuffer(body))
+	client := &http.Client{
+		Timeout: time.Second * 120,
+	}
+	resp, err := client.Post(ollamaHost+"/api/generate", "application/json", bytes.NewBuffer(body))
 	if err != nil {
 		log.Printf("Error calling Ollama: %s\n", err)
 		return
 	}
 	defer resp.Body.Close()
 
-	log.Printf("Ollama response status: %s\n", resp.StatusCode)
+	log.Printf("Ollama response status: %s\n", resp.Status)
 
 	bbytes, err := io.ReadAll(resp.Body)
 	if err != nil {
 		log.Printf("Error reading response body: %s\n", err)
-		s.ChannelMessageSend(
+		_, _  = s.ChannelMessageSend(
 			m.ChannelID,
 			"Sorry, I had troulbe viewing the response from my AI service.",
 		)
@@ -225,16 +229,16 @@ func answerQuestion(s *discordgo.Session, m *discordgo.MessageCreate) {
 	var ollamaResp OllamaGenerateResponse
 	if err := json.Unmarshal(bbytes, &ollamaResp); err != nil {
 		log.Printf("Error decoding response: %s\n", err)
-		s.ChannelMessageSend(
+		_, _ = s.ChannelMessageSend(
 			m.ChannelID,
 			"Sorry, I had trouble reading the response from my AI service.",
 		)
 	}
 	if ollamaResp.Response == "" {
-		s.ChannelMessageSend(m.ChannelID, "Sorry, seems I had nothing to say about that...")
+		_, _ = s.ChannelMessageSend(m.ChannelID, "Sorry, seems I had nothing to say about that...")
 	}
 
-	s.ChannelMessageSendReply(m.ChannelID, ollamaResp.Response, m.MessageReference)
+	_, _ = s.ChannelMessageSendReply(m.ChannelID, ollamaResp.Response, m.MessageReference)
 }
 
 func getQuotesChannel(chns []*discordgo.Channel) (*discordgo.Channel, error) {
