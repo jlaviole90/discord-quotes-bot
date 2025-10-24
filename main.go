@@ -234,11 +234,26 @@ func answerQuestion(s *discordgo.Session, m *discordgo.MessageCreate) {
 			"Sorry, I had trouble reading the response from my AI service.",
 		)
 	}
+
+	log.Printf("Parsed response - Response: '%s', Done: %v\n", ollamaResp.Response, ollamaResp.Done)
+
 	if ollamaResp.Response == "" {
+		log.Printf("Empty response, sending default message\n")
 		_, _ = s.ChannelMessageSend(m.ChannelID, "Sorry, seems I had nothing to say about that...")
+		return
 	}
 
-	_, _ = s.ChannelMessageSendReply(m.ChannelID, ollamaResp.Response, m.MessageReference)
+	log.Printf("Sending response to Discord (length: %d chars)\n", len(ollamaResp.Response))
+	_, err = s.ChannelMessageSendReply(m.ChannelID, ollamaResp.Response, m.MessageReference)
+	if err != nil {
+		log.Printf("Error sending response to Discord: %s\n", err)
+		_, err = s.ChannelMessageSend(m.ChannelID, ollamaResp.Response)
+		if err != nil {
+			log.Printf("Error sending plain message to Discord: %s\n", err)
+		}
+	} else {
+		log.Printf("Send response to Discord successfully!")
+	}
 }
 
 func getQuotesChannel(chns []*discordgo.Channel) (*discordgo.Channel, error) {
