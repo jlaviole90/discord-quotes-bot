@@ -3,17 +3,14 @@ package main
 import (
 	"bytes"
 	"encoding/json"
-	"flag"
 	"fmt"
 	"log"
 	"net/http"
 	"os"
 	"os/signal"
-	"runtime"
 	"strings"
 
 	"github.com/bwmarrin/discordgo"
-	"github.com/go-skynet/go-llama.cpp"
 )
 
 func main() {
@@ -181,27 +178,42 @@ func answerQuestion(s *discordgo.Session, m *discordgo.MessageCreate) {
 	})
 	if err != nil {
 		log.Printf("Error marshalling request: %s\n", err)
-		s.ChannelMessageSend(m.ChannelID, "Sorry, I had trouble processing your question.")
+		_, err := s.ChannelMessageSend(m.ChannelID, "Sorry, I had trouble processing your question.")
+		if err != nil {
+			log.Printf("FATAL 0009: could not send message: %s\n", err)
+		}
 		return
 	}
 
 	resp, err := http.Post(ollamaHost+"/api/generate", "application/json", bytes.NewBuffer(body))
 	if err != nil {
 		log.Printf("Error calling Ollama: %s\n", err)
-		s.ChannelMessageSend(m.ChannelID, "Sorry, I couldn't connect to the AI service.")
+		_, err := s.ChannelMessageSend(m.ChannelID, "Sorry, I couldn't connect to the AI service.")
+		if err != nil {
+			log.Printf("FATAL 0010: could not send message: %s\n", err)
+		}
 	}
 	defer resp.Body.Close()
 
 	var ollamaResp OllamaGenerateResponse
 	if err := json.NewDecoder(resp.Body).Decode(&ollamaResp); err != nil {
 		log.Printf("Error decoding response: %s\n", err)
-		s.ChannelMessageSend(m.ChannelID, "Sorry, I had trouble processing your question.")
+		_, err := s.ChannelMessageSend(m.ChannelID, "Sorry, I had trouble processing your question.")
+		if err != nil {
+			log.Printf("FATAL 0011: could not send message: %s\n", err)
+		}
 	}
 
 	if ollamaResp.Response != "" {
-		s.ChannelMessageSendReply(m.ChannelID, ollamaResp.Response, m.MessageReference)
+		_, err := s.ChannelMessageSendReply(m.ChannelID, ollamaResp.Response, m.MessageReference)
+		if err != nil {
+			log.Printf("FATAL 0012: could not send message: %s\n", err)
+		}
 	} else {
-		s.ChannelMessageSend(m.ChannelID, "Sorry, I didn't get a response from my AI service.")
+		_, err := s.ChannelMessageSend(m.ChannelID, "Sorry, I didn't get a response from my AI service.")
+		if err != nil {
+			log.Printf("FATAL 0013: could not send message: %s\n", err)
+		}
 	}
 }
 
