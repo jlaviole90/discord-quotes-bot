@@ -13,12 +13,12 @@ if curl -s http://ollama:11434/api/tags | grep -q "qwen2.5:3b"; then
 else
     echo "Creating model qwen2.5:3b from GGUF file..."
 
-    MODELFILE_JSON=$(cat /app/Modelfile) | jq -Rs .)
+    MODELFILE_JSON=$(cat /app/Modelfile | jq -Rs .)
 
     cat > /tmp/payload.json << EOF
 {
     "name": "qwen2.5:3b",
-    "modelfile": "${MODELFILE_JSON}"
+    "modelfile": ${MODELFILE_JSON}
 }
 EOF
 
