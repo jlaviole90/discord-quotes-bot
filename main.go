@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"os"
@@ -185,35 +186,35 @@ func answerQuestion(s *discordgo.Session, m *discordgo.MessageCreate) {
 		return
 	}
 
+	log.Printf("Sending request to Ollama: %s\n", string(body))
+
 	resp, err := http.Post(ollamaHost+"/api/generate", "application/json", bytes.NewBuffer(body))
 	if err != nil {
 		log.Printf("Error calling Ollama: %s\n", err)
-		_, err := s.ChannelMessageSend(m.ChannelID, "Sorry, I couldn't connect to the AI service.")
-		if err != nil {
-			log.Printf("FATAL 0010: could not send message: %s\n", err)
-		}
+		return
 	}
 	defer resp.Body.Close()
 
+	log.Printf("Ollama response status: %s\n", resp.StatusCode)
+
+	bbytes, err := io.ReadAll(resp.Body)
+	if err != nil {
+		log.Printf("Error reading response body: %s\n", err)
+		return
+	}
+
+	log.Printf("Ollama response body: %s\n", string(bbytes))
+
 	var ollamaResp OllamaGenerateResponse
-	if err := json.NewDecoder(resp.Body).Decode(&ollamaResp); err != nil {
+	if err := json.Unmarshal(bbytes, &ollamaResp); err != nil {
 		log.Printf("Error decoding response: %s\n", err)
-		_, err := s.ChannelMessageSend(m.ChannelID, "Sorry, I had trouble processing your question.")
-		if err != nil {
-			log.Printf("FATAL 0011: could not send message: %s\n", err)
-		}
+		s.ChannelMessageSend(m.ChannelID, "Sorry, I had trouble processing your question.")
 	}
 
 	if ollamaResp.Response != "" {
-		_, err := s.ChannelMessageSendReply(m.ChannelID, ollamaResp.Response, m.MessageReference)
-		if err != nil {
-			log.Printf("FATAL 0012: could not send message: %s\n", err)
-		}
+		s.ChannelMessageSendReply(m.ChannelID, ollamaResp.Response, m.MessageReference)
 	} else {
-		_, err := s.ChannelMessageSend(m.ChannelID, "Sorry, I didn't get a response from my AI service.")
-		if err != nil {
-			log.Printf("FATAL 0013: could not send message: %s\n", err)
-		}
+		s.ChannelMessageSend(m.ChannelID, "Sorry, I didn't get a response from my AI service.")
 	}
 }
 
