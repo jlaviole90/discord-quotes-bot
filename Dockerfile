@@ -16,8 +16,10 @@ WORKDIR /app
 
 RUN apt-get update && apt-get install -y \
     ca-certificates \
+    curl \
     && rm -rf /var/lib/apt/lists/*
 
 COPY --from=build /bin/discord-quotes-bot /app/discord-quotes-bot
+COPY init-model.sh /app/init-model.sh
 
-CMD ["/app/discord-quotes-bot"]
+CMD ["/app/init-model.sh"]
