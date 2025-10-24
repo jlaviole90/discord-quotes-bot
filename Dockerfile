@@ -13,16 +13,16 @@ RUN rm -rf go-llama.cpp && \
     git clone https://github.com/go-skynet/go-llama.cpp.git && \
     cd go-llama.cpp && git submodule update --init --recursive
 
-    RUN cd /src/go-llama.cpp/llama.cpp && \
-    if [ -f common/common.h ] && [ ! -f common.h ]; then ln -s common/common.h common.h; fi && \
-    if [ -f common/sampling.h ] && [ ! -f sampling.h ]; then ln -s common/sampling.h sampling.h; fi && \
-    if [ -f common/log.h ] && [ ! -f log.h ]; then ln -s common/log.h log.h; fi && \
-    if [ -f common/console.h ] && [ ! -f console.h ]; then ln -s common/console.h console.h; fi
+RUN cd /src/go-llama.cpp && \
+    sed -i 's|#include "common.h"|#include "common/common.h"|g' binding.cpp && \
+    sed -i 's|#include "sampling.h"|#include "common/sampling.h"|g' binding.cpp && \
+    sed -i 's|#include "log.h"|#include "common/log.h"|g' binding.cpp && \
+    sed -i 's|#include "console.h"|#include "common/console.h"|g' binding.cpp
 
 ENV CGO_ENABLED=1
 ENV CC=gcc
 ENV CXX=g++
-ENV CGO_CFLAGS="-I/src/go-llama.cpp/llama.cpp"
+ENV CGO_CFLAGS="-I/src/go-llama.cpp/llama.cpp -I/src/go-llama.cpp/common"
 ENV CGO_LDFLAGS="-L/src/go-llama.cpp -lbinding -lstdc++ -lm -lpthread"
 
 RUN cd go-llama.cpp && make libbinding.a
