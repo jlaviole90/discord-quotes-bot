@@ -15,8 +15,7 @@ RUN rm -rf go-llama.cpp && \
     git submodule update --init --recursive && \
     cd llama.cpp && \
     git fetch origin && \
-    git checkout master && \
-    git pull origin master
+    git checkout b3561
 
 RUN cd /src/go-llama.cpp && \
     sed -i 's|#include "common.h"|#include "common/common.h"|g' binding.cpp && \
