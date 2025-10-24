@@ -2,7 +2,7 @@
 set -e
 
 echo "Waiting for Ollama service to start..."
-until curl -s http://localhost:11434/api/tags > /dev/null 2>&1; do
+until curl -s http://ollama:11434/api/tags > /dev/null 2>&1; do
     sleep 2
     echo "Waiting..."
 done
@@ -30,7 +30,7 @@ EOF
 
     curl -X POST http://ollama:11434/api/create -d "{
         \"name\": \"qwen2.5:3b\",
-        \"modelfile\": \"$(cat /tmp/Modelfile | sed 's\"\//"\g' | tr '\n' ' ')\"
+        \"modelfile\": \"$(cat /tmp/Modelfile | sed 's/\"/\\\\"/g' | tr '\n' ' ')\"
     }"
 
     echo "Model created successfully!"
