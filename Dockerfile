@@ -21,6 +21,7 @@ RUN apt-get update && apt-get install -y \
 
 COPY --from=build /bin/discord-quotes-bot /app/discord-quotes-bot
 COPY init-model.sh /app/init-model.sh
+COPY Modelfile /app/Modelfile
 
 RUN sed -i 's/\r$//' /app/init-model.sh && \
     chmod +x /app/init-model.sh
