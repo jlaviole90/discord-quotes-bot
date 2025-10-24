@@ -27,6 +27,8 @@ ENV CGO_LDFLAGS="-L/src/go-llama.cpp -lbinding -lstdc++ -lm -lpthread"
 
 RUN cd go-llama.cpp && make libbinding.a
 
+RUN go mod edit -replace github.com/go-skynet/go-llama.cpp=/src/go-llama.cpp
+
 RUN go mod download
 RUN go build -v -o /bin/discord-quotes-bot .
 
