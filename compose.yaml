@@ -14,7 +14,10 @@ services:
       context: .
       dockerfile: Dockerfile
     depends_on:
-      - ollama
+      ollama:
+        condition: service_started
+    volumes:
+      - ~/models:/models:ro
     environment:
       PORT: 3000
       OLLAMA_HOST: "http://ollama:11434"

@@ -1,6 +1,6 @@
 ARG GO_VERSION=1.23.5
 
-FROM golang:${GO_VERSION} as build
+FROM golang:${GO_VERSION} AS build
 
 WORKDIR /src
 
