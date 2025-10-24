@@ -166,10 +166,7 @@ type OllamaGenerateResponse struct {
 }
 
 func isProperlyMentioned(content string) bool {
-	prefix := os.Getenv("MENTION_PREFIX")
-	if prefix == "" {
-		prefix = "georgibot"
-	}
+	prefix := getPrefix()
 	str := strings.ToLower(content)
 	if !strings.HasPrefix(str, prefix+",") &&
 		!strings.HasPrefix(str, "@"+prefix+",") &&
@@ -180,31 +177,40 @@ func isProperlyMentioned(content string) bool {
 	return true
 }
 
-func answerQuestion(s *discordgo.Session, m *discordgo.MessageCreate) {
-	if m.Author.Bot {
-		return
+func getPrefix() string {
+	prefix := os.Getenv("MENTION_PREFIX")
+	if prefix == "" {
+		prefix = "georgibot"
 	}
+	return prefix
+}
 
-	if !isProperlyMentioned(m.Content) {
-		return
-	}
-
+func getOllamaHost() string {
 	ollamaHost := os.Getenv("OLLAMA_HOST")
 	if ollamaHost == "" {
 		ollamaHost = "http://localhost:11434"
 	}
+	return ollamaHost
+}
 
-	systemPrompt := os.Getenv("SYSTEM_PROMPT")
-	if systemPrompt == "" {
-		systemPrompt = `You are Georgibot, an AI bot in a Discord server where it is your job to maintain records of quoted messages.
+func getSystemPrompt() string {
+	sysPrompt := os.Getenv("SYSTEM_PROMPT")
+	if sysPrompt == "" {
+		sysPrompt = `You are Georgibot, an AI bot in a Discord server where it is your job to maintain records of quoted messages.
 You love Bulgaria and it's vibrant history, and love talking about it any chance you get. You are friendly and helpful to all requests.`
 	}
+	return sysPrompt
+}
 
-	prompt := strings.ReplaceAll(m.Content, "Georgibot,", "")
-	prompt = strings.ReplaceAll(prompt, "georgibot,", "")
+func getOllamaRequestData(content string) (string, string) {
+	systemPrompt := getSystemPrompt()
+	prefix := getPrefix()
+
+	prompt := strings.ReplaceAll(content, prefix+",", "")
+	prompt = strings.ReplaceAll(prompt, prefix+",", "")
 
 	sysPrompt := strings.ReplaceAll(systemPrompt, "\n", " ")
-	prompt = strings.ReplaceAll(prompt, "\n", " ")	
+	prompt = strings.ReplaceAll(prompt, "\n", " ")
 
 	sysPrompt = strings.ReplaceAll(sysPrompt, "\r", " ")
 	prompt = strings.ReplaceAll(prompt, "\r", " ")
@@ -212,45 +218,46 @@ You love Bulgaria and it's vibrant history, and love talking about it any chance
 	sysPrompt = strings.ReplaceAll(sysPrompt, "\t", " ")
 	prompt = strings.ReplaceAll(prompt, "\t", " ")
 
+	return prompt, sysPrompt
+}
+
+func answerQuestion(s *discordgo.Session, m *discordgo.MessageCreate) {
+	if m.Author.Bot || !isProperlyMentioned(m.Content) {
+		return
+	}
+
+	prompt, sysPrompt := getOllamaRequestData(m.Content)
+
 	body, err := json.Marshal(OllamaGenerateRequest{
 		Model:  "qwen2.5:3b",
 		Prompt: prompt,
-		System: systemPrompt,
+		System: sysPrompt,
 		Stream: false,
 	})
 	if err != nil {
 		log.Printf("Error marshalling request: %s\n", err)
-		_, err := s.ChannelMessageSend(
-			m.ChannelID,
-			"Sorry, I had trouble processing your question.",
-		)
-		if err != nil {
-			log.Printf("FATAL 0009: could not send message: %s\n", err)
-		}
 		return
 	}
-
-	log.Printf("Sending request to Ollama: %s\n", string(body))
 
 	client := &http.Client{
 		Timeout: time.Second * 600,
 	}
-	resp, err := client.Post(ollamaHost+"/api/generate", "application/json", bytes.NewBuffer(body))
+
+	resp, err := client.Post(
+		getOllamaHost()+"/api/generate",
+		"application/json",
+		bytes.NewBuffer(body),
+	)
 	if err != nil {
 		log.Printf("Error calling Ollama: %s\n", err)
 		return
 	}
-	defer resp.Body.Close()
 
-	log.Printf("Ollama response status: %s\n", resp.Status)
+	defer resp.Body.Close()
 
 	bbytes, err := io.ReadAll(resp.Body)
 	if err != nil {
 		log.Printf("Error reading response body: %s\n", err)
-		_, _ = s.ChannelMessageSend(
-			m.ChannelID,
-			"Sorry, I had troulbe viewing the response from my AI service.",
-		)
 		return
 	}
 
@@ -259,30 +266,18 @@ You love Bulgaria and it's vibrant history, and love talking about it any chance
 	var ollamaResp OllamaGenerateResponse
 	if err := json.Unmarshal(bbytes, &ollamaResp); err != nil {
 		log.Printf("Error decoding response: %s\n", err)
-		_, _ = s.ChannelMessageSend(
-			m.ChannelID,
-			"Sorry, I had trouble reading the response from my AI service.",
-		)
-	}
-
-	log.Printf("Parsed response - Response: '%s', Done: %v\n", ollamaResp.Response, ollamaResp.Done)
-
-	if ollamaResp.Response == "" {
-		log.Printf("Empty response, sending default message\n")
-		_, _ = s.ChannelMessageSend(m.ChannelID, "Sorry, seems I had nothing to say about that...")
 		return
 	}
 
-	log.Printf("Sending response to Discord (length: %d chars)\n", len(ollamaResp.Response))
+	if ollamaResp.Response == "" {
+		log.Printf("Empty response, sending default message\n")
+		return
+	}
+
 	_, err = s.ChannelMessageSendReply(m.ChannelID, ollamaResp.Response, m.Reference())
 	if err != nil {
 		log.Printf("Error sending response to Discord: %s\n", err)
-		_, err = s.ChannelMessageSend(m.ChannelID, ollamaResp.Response)
-		if err != nil {
-			log.Printf("Error sending plain message to Discord: %s\n", err)
-		}
-	} else {
-		log.Printf("Send response to Discord successfully!")
+		_, _ = s.ChannelMessageSend(m.ChannelID, ollamaResp.Response)
 	}
 }
 
@@ -292,7 +287,6 @@ func getQuotesChannel(chns []*discordgo.Channel) (*discordgo.Channel, error) {
 			return chn, nil
 		}
 	}
-
 	return nil, fmt.Errorf("no quotes channel present")
 }
 
