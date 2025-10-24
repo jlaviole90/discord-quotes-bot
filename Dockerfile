@@ -32,9 +32,14 @@ RUN go mod edit -replace github.com/go-skynet/go-llama.cpp=/src/go-llama.cpp
 RUN go mod download
 RUN go build -v -o /bin/discord-quotes-bot .
 
-FROM debian:bullseye-slim
+FROM debian:bookworm-slim
 
 WORKDIR /app
+
+RUN apt-get update && apt-get install -y \
+    libstdc++6 \
+    ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
 
 COPY --from=build /bin/discord-quotes-bot /app/discord-quotes-bot
 COPY --from=build /src/go-llama.cpp /app/go-llama.cpp
