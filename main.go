@@ -170,7 +170,7 @@ func answerQuestion(s *discordgo.Session, m *discordgo.MessageCreate) {
 		return
 	}
 
-	if !strings.HasPrefix(m.Content, "Georgibot, ") || !strings.Contains(m.Content, "Bulgaria") {
+	if !strings.HasPrefix(m.Content, "Georgibot, ") {
 		return
 	}
 
