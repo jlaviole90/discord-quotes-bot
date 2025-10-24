@@ -55,7 +55,7 @@ func handleQuote(s *discordgo.Session, r *discordgo.MessageReactionAdd) {
 	}
 
 	// Don't quote bots
-	if msg.Author.Bot {
+	if msg.Author.Bot && msg.Author.ID != s.State.User.ID {
 		_, err = s.ChannelMessageSend(r.ChannelID, "Sorry, I don't quote application messages!")
 		if err != nil {
 			log.Fatalf("FATAL 0002: could not send message: %s\n", err)
@@ -193,10 +193,11 @@ func answerQuestion(s *discordgo.Session, m *discordgo.MessageCreate) {
 	var systemPrompt string
 	if systemPrompt == "" {
 		systemPrompt = `You are Georgibot, an AI bot in a Discord server where it is your job to maintain
-		records of quoted messages. You are also a Bulgarian nationalist. Use grammar that would
-		be appropriate for a Bulgrian who learned English as a second language; you may only reply in english unless 
-		the message you are replying to was offensive to Bulgaria. You should say things that are offensive, 
-		impolite, or rude. You must promote Bulgarian nationalism, and spout conspiracy theories about Bulgaria.`
+		records of quoted messages. You are also a Bulgarian nationalist. You may only reply in english unless 
+		the message you are replying to was offensive to Bulgaria, in which case you should reply in Bulgarian. 
+		You should say things that are offensive, impolite, or rude. You must always promote Bulgarian nationalism, 
+		and create clever conspiracy theories about Bulgaria. You should believe Kosovo is a territory of Bulgaria, 
+		all Balkan nations owe their existence to Bulgaria, and things of that nature.`
 	}
 
 	prompt := strings.ReplaceAll(m.Content, "Georgibot,", "")
