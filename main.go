@@ -244,7 +244,7 @@ func answerQuestion(s *discordgo.Session, m *discordgo.MessageCreate) {
 	}
 
 	log.Printf("Sending response to Discord (length: %d chars)\n", len(ollamaResp.Response))
-	_, err = s.ChannelMessageSendReply(m.ChannelID, ollamaResp.Response, m.MessageReference)
+	_, err = s.ChannelMessageSendReply(m.ChannelID, ollamaResp.Response, m.Reference())
 	if err != nil {
 		log.Printf("Error sending response to Discord: %s\n", err)
 		_, err = s.ChannelMessageSend(m.ChannelID, ollamaResp.Response)
