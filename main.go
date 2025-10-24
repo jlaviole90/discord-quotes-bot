@@ -149,8 +149,18 @@ type OllamaGenerateRequest struct {
 }
 
 type OllamaGenerateResponse struct {
-	Response string `json:"response"`
-	Done     bool   `json:"done"`
+	Model              string `json:"model"`
+	CreatedAt          string `json:"created_at"`
+	Response           string `json:"response"`
+	Done               bool   `json:"done"`
+	DoneReason         string `json:"done_reason"`
+	Context            string `json:"context"`
+	TotalDuration      int    `json:"total_duration"`
+	LoadDuration       int    `json:"load_duration"`
+	PromptEvalCount    int    `json:"prompt_eval_count"`
+	PromptEvalDuration int    `json:"prompt_eval_duration"`
+	EvalCount          int    `json:"eval_count"`
+	EvalDuration       int    `json:"eval_duration"`
 }
 
 func answerQuestion(s *discordgo.Session, m *discordgo.MessageCreate) {
@@ -164,7 +174,7 @@ func answerQuestion(s *discordgo.Session, m *discordgo.MessageCreate) {
 
 	question := strings.TrimPrefix(m.Content, "Georgibot, ")
 	if question == "" {
-		return	
+		return
 	}
 
 	ollamaHost := os.Getenv("OLLAMA_HOST")
@@ -173,13 +183,16 @@ func answerQuestion(s *discordgo.Session, m *discordgo.MessageCreate) {
 	}
 
 	body, err := json.Marshal(OllamaGenerateRequest{
-		Model: "qwen2.5:3b",
+		Model:  "qwen2.5:3b",
 		Prompt: question,
 		Stream: false,
 	})
 	if err != nil {
 		log.Printf("Error marshalling request: %s\n", err)
-		_, err := s.ChannelMessageSend(m.ChannelID, "Sorry, I had trouble processing your question.")
+		_, err := s.ChannelMessageSend(
+			m.ChannelID,
+			"Sorry, I had trouble processing your question.",
+		)
 		if err != nil {
 			log.Printf("FATAL 0009: could not send message: %s\n", err)
 		}
@@ -200,6 +213,10 @@ func answerQuestion(s *discordgo.Session, m *discordgo.MessageCreate) {
 	bbytes, err := io.ReadAll(resp.Body)
 	if err != nil {
 		log.Printf("Error reading response body: %s\n", err)
+		s.ChannelMessageSend(
+			m.ChannelID,
+			"Sorry, I had troulbe viewing the response from my AI service.",
+		)
 		return
 	}
 
@@ -208,14 +225,16 @@ func answerQuestion(s *discordgo.Session, m *discordgo.MessageCreate) {
 	var ollamaResp OllamaGenerateResponse
 	if err := json.Unmarshal(bbytes, &ollamaResp); err != nil {
 		log.Printf("Error decoding response: %s\n", err)
-		s.ChannelMessageSend(m.ChannelID, "Sorry, I had trouble processing your question.")
+		s.ChannelMessageSend(
+			m.ChannelID,
+			"Sorry, I had trouble reading the response from my AI service.",
+		)
+	}
+	if ollamaResp.Response == "" {
+		s.ChannelMessageSend(m.ChannelID, "Sorry, seems I had nothing to say about that...")
 	}
 
-	if ollamaResp.Response != "" {
-		s.ChannelMessageSendReply(m.ChannelID, ollamaResp.Response, m.MessageReference)
-	} else {
-		s.ChannelMessageSend(m.ChannelID, "Sorry, I didn't get a response from my AI service.")
-	}
+	s.ChannelMessageSendReply(m.ChannelID, ollamaResp.Response, m.MessageReference)
 }
 
 func getQuotesChannel(chns []*discordgo.Channel) (*discordgo.Channel, error) {
