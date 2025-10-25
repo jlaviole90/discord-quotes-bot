@@ -58,7 +58,7 @@ func Quote(s *discordgo.Session, r *discordgo.MessageReactionAdd) {
 
 	params := &discordgo.WebhookParams{
 		Content:   msg.Content,
-		Username:  fmt.Sprintf("%s || %s", msg.Author.Username, msg.Author.GlobalName),
+		Username:  msg.Member.DisplayName(),
 		AvatarURL: msg.Author.AvatarURL(""),
 	}
 	if len(msg.Attachments) > 0 {

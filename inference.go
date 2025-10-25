@@ -44,6 +44,11 @@ var (
 	contextTimeout = time.Minute * 30 
 )
 
+func enrichPrompt(prompt, user string) string {
+	return `This message was sent by ` + user +
+		`Message Content: ` + prompt
+}
+
 func Inference(s *discordgo.Session, m *discordgo.MessageCreate) {
 	if m.Author.Bot || !isProperlyMentioned(m.Content) {
 		return
@@ -67,9 +72,10 @@ func Inference(s *discordgo.Session, m *discordgo.MessageCreate) {
 	ctx := channelContext[m.ChannelID]
 	contextMutex.RUnlock()
 
+
 	body, err := json.Marshal(OllamaGenerateRequest{
 		Model:  "qwen2.5:3b",
-		Prompt: prompt,
+		Prompt: enrichPrompt(prompt, m.Member.DisplayName()),
 		System: sysPrompt,
 		Stream: false,
 		Context: ctx,
