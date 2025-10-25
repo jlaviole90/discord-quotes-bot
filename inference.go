@@ -200,7 +200,7 @@ func getOllamaRequestData(content string) (string, string) {
 	systemPrompt := getSystemPrompt()
 	prefix := getPrefix()
 
-	systemPrompt = strings.ReplaceAll(systemPrompt, "${PREFIX}", prefix)
+	systemPrompt = strings.ReplaceAll(systemPrompt, "<PREFIX>", prefix)
 	systemPrompt = strings.ReplaceAll(systemPrompt, "\n", " ")
 	systemPrompt = strings.ReplaceAll(systemPrompt, "\r", " ")
 	systemPrompt = strings.ReplaceAll(systemPrompt, "\t", " ")
