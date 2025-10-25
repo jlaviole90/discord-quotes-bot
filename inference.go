@@ -75,7 +75,7 @@ func Inference(s *discordgo.Session, m *discordgo.MessageCreate) {
 
 	body, err := json.Marshal(OllamaGenerateRequest{
 		Model:  "qwen2.5:3b",
-		Prompt: enrichPrompt(prompt, m.Member.DisplayName()),
+		Prompt: enrichPrompt(prompt, m.Author.GlobalName),
 		System: sysPrompt,
 		Stream: false,
 		Context: ctx,
