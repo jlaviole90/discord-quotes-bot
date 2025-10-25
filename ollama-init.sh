@@ -10,25 +10,25 @@ done
 echo "Ollama started!"
 
 echo "Checking for GGUF file..."
-ls -lah /models/qwen/ || echo "Directory /models/qwen/ not found!"
+ls -lah /models/phi/ || echo "Directory /models/phi/ not found!"
 echo ""
 
-if [ -f "/models/qwen/qwen2.5-3b-instruct.Q4_K_M.gguf" ]; then
-    echo "Found GGUF file: /models/qwen/qwen2.5-3b-instruct.Q4_K_M.gguf"
+if [ -f "/models/phi/phi3-mini-4k.gguf" ]; then
+    echo "Found GGUF file: /models/phi/phi3-mini-4k.gguf"
 else
-    echo "X GGUF file not found at /models/qwen/qwen2.5-3b-instruct.Q4_K_M.gguf"
+    echo "X GGUF file not found at /models/phi/phi3-mini-4k.gguf"
     echo "Available files in /models:"
     ls -lah /models/ || echo "Cannot access /models/"
     exit 1
 fi
 
-if ollama list | grep -q "qwen2.5:3b"; then
-    echo "Model qwen2.5:3b already exists."
+if ollama list | grep -q "phi3:mini"; then
+    echo "Model phi3:mini already exists."
 else
-    echo "Creating model qwen2.5:3b from GGUF file..."
+    echo "Creating model phi3:mini from GGUF file..."
 
     cat > /tmp/Modelfile << 'EOF'
-FROM /models/qwen/qwen2.5-3b-instruct.Q4_K_M.gguf
+FROM /models/phi/phi3-mini-4k.gguf
 
 TEMPLATE """{{ if .System }}<|im_start|>system
 {{ .System }}<|im_end|>
@@ -47,8 +47,8 @@ EOF
     cat /tmp/Modelfile
     echo ""
 
-    echo "Running: ollama create qwen2.5:3b -f /tmp/Modelfile"
-    ollama create qwen2.5:3b -f /tmp/Modelfile
+    echo "Running: ollama create phi3:mini -f /tmp/Modelfile"
+    ollama create phi3:mini -f /tmp/Modelfile
 
     echo "Completed model creation script."
 fi
