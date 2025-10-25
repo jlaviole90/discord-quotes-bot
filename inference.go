@@ -44,11 +44,6 @@ var (
 	contextTimeout = time.Minute * 30 
 )
 
-func enrichPrompt(prompt, user string) string {
-	return `This message was sent by: ` + user +
-		`. Message Content: ` + prompt
-}
-
 func Inference(s *discordgo.Session, m *discordgo.MessageCreate) {
 	if m.Author.Bot || !isProperlyMentioned(m.Content) {
 		return
@@ -188,7 +183,7 @@ func getOllamaHost() string {
 }
 
 func getSystemPrompt(username string) string {
-	sysPrompt := os.Getenv("SYSTEM_PROMPT_"+username)
+	sysPrompt := os.Getenv("SYSTEM_PROMPT_"+strings.ToUpper(username))
 	if sysPrompt == "" {
 		sysPrompt = os.Getenv("SYSTEM_PROMPT")
 		if sysPrompt == "" {
@@ -216,3 +211,9 @@ func getOllamaRequestData(content, username string) (string, string) {
 
 	return prompt, systemPrompt
 }
+
+func enrichPrompt(prompt, user string) string {
+	return `This message was sent by: ` + user +
+		`. Message Content: ` + prompt
+}
+
