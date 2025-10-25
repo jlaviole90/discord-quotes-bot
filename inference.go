@@ -162,8 +162,8 @@ func isProperlyMentioned(content string) bool {
 	prefix := getPrefix()
 	str := strings.ToLower(content)
 
-	if !strings.HasPrefix(str, prefix+",") &&
-		!strings.HasPrefix(str, "@"+prefix+",") &&
+	if !strings.HasPrefix(str, prefix) &&
+		!strings.HasPrefix(str, "@"+prefix) &&
 		!strings.Contains(str, "bulgaria") {
 		return false
 	}
