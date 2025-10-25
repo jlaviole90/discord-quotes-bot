@@ -70,7 +70,7 @@ func Inference(s *discordgo.Session, m *discordgo.MessageCreate) {
 
 	body, err := json.Marshal(OllamaGenerateRequest{
 		Model:  "qwen2.5:3b",
-		Prompt: enrichPrompt(prompt, m.Author.GlobalName),
+		Prompt: enrichPrompt(prompt, m),
 		System: sysPrompt,
 		Stream: false,
 		Context: ctx,
@@ -204,9 +204,15 @@ func getPrefix() string {
 	return prefix
 }
 
-func enrichPrompt(prompt, user string) string {
-	return `This message was sent by: ` + user +
-		`. Message Content: ` + prompt
+func enrichPrompt(prompt string, m *discordgo.MessageCreate) string {
+	if m.Type == discordgo.MessageTypeReply && m.ReferencedMessage != nil && m.ReferencedMessage.Content != "" {
+		return `This message was sent by: ` + m.Author.Username +
+			`. Message Content: ` + prompt +
+			`. This message was a reply to: ` + m.ReferencedMessage.Content
+	} else {
+		return `This message was sent by: ` + m.Author.Username +
+			`. Message Content: ` + prompt
+	}
 }
 
 func getOllamaHost() string {
