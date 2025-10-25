@@ -15,11 +15,11 @@ import (
 )
 
 type OllamaGenerateRequest struct {
-	Model  string `json:"model"`
-	Prompt string `json:"prompt"`
-	System string `json:"system"`
-	Stream bool   `json:"stream"`
-	Context []int `json:"context"`
+	Model   string `json:"model"`
+	Prompt  string `json:"prompt"`
+	System  string `json:"system"`
+	Stream  bool   `json:"stream"`
+	Context []int  `json:"context"`
 }
 
 type OllamaGenerateResponse struct {
@@ -38,9 +38,9 @@ type OllamaGenerateResponse struct {
 }
 
 var (
-	userContext = make(map[string][]int)
-	userActivity = make(map[string]time.Time)
-	contextMutex = sync.RWMutex{}
+	userContext    = make(map[string][]int)
+	userActivity   = make(map[string]time.Time)
+	contextMutex   = sync.RWMutex{}
 	contextTimeout = time.Minute * 15
 )
 
@@ -67,12 +67,11 @@ func Inference(s *discordgo.Session, m *discordgo.MessageCreate) {
 	ctx := userContext[m.Author.ID]
 	contextMutex.RUnlock()
 
-
 	body, err := json.Marshal(OllamaGenerateRequest{
-		Model:  "qwen2.5:3b",
-		Prompt: enrichPrompt(prompt, m),
-		System: sysPrompt,
-		Stream: false,
+		Model:   "qwen2.5:3b",
+		Prompt:  enrichPrompt(prompt, s, m),
+		System:  sysPrompt,
+		Stream:  false,
 		Context: ctx,
 	})
 	if err != nil {
@@ -146,10 +145,12 @@ func Inference(s *discordgo.Session, m *discordgo.MessageCreate) {
 	userActivity[m.Author.ID] = time.Now()
 	contextMutex.Unlock()
 
-	_, err = s.ChannelMessageSendReply(m.ChannelID, ollamaResp.Response, m.Reference())
+	res := strings.ReplaceAll(ollamaResp.Response, "*", "\\*")
+
+	_, err = s.ChannelMessageSendReply(m.ChannelID, res, m.Reference())
 	if err != nil {
 		log.Printf("Error sending response to Discord: %s\n", err)
-		_, _ = s.ChannelMessageSend(m.ChannelID, ollamaResp.Response)
+		_, _ = s.ChannelMessageSend(m.ChannelID, res)
 	}
 }
 
@@ -185,7 +186,7 @@ func getOllamaRequestData(content, username string) (string, string) {
 }
 
 func getSystemPrompt(username string) string {
-	sysPrompt := os.Getenv("SYSTEM_PROMPT_"+strings.ToUpper(username))
+	sysPrompt := os.Getenv("SYSTEM_PROMPT_" + strings.ToUpper(username))
 	if sysPrompt == "" {
 		sysPrompt = os.Getenv("SYSTEM_PROMPT")
 		if sysPrompt == "" {
@@ -204,15 +205,26 @@ func getPrefix() string {
 	return prefix
 }
 
-func enrichPrompt(prompt string, m *discordgo.MessageCreate) string {
-	if m.Type == discordgo.MessageTypeReply && m.ReferencedMessage != nil && m.ReferencedMessage.Content != "" {
-		return `This message was sent by: ` + m.Author.Username +
-			`. Message Content: ` + prompt +
-			`. This message was a reply to: ` + m.ReferencedMessage.Content
-	} else {
-		return `This message was sent by: ` + m.Author.Username +
-			`. Message Content: ` + prompt
+func enrichPrompt(prompt string, s *discordgo.Session, m *discordgo.MessageCreate) string {
+	msg := "This message was sent by: " + m.Author.Username +
+		". Message Content: " + prompt
+
+	if m.Type == discordgo.MessageTypeReply &&
+		m.ReferencedMessage != nil &&
+		m.ReferencedMessage.Content != "" {
+
+		msg = msg + ". This message was a reply to: " + m.ReferencedMessage.Content +
+			". The reply was sent by: "
+
+		if m.ReferencedMessage.Author.ID == s.State.User.ID {
+			return msg + "You, the bot named " + getPrefix()
+
+		} 
+
+		return msg + m.ReferencedMessage.Author.Username
 	}
+
+	return msg
 }
 
 func getOllamaHost() string {
@@ -222,4 +234,3 @@ func getOllamaHost() string {
 	}
 	return ollamaHost
 }
-
