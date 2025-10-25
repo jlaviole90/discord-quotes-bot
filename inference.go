@@ -45,8 +45,8 @@ var (
 )
 
 func enrichPrompt(prompt, user string) string {
-	return `This message was sent by ` + user +
-		`Message Content: ` + prompt
+	return `This message was sent by: ` + user +
+		`. Message Content: ` + prompt
 }
 
 func Inference(s *discordgo.Session, m *discordgo.MessageCreate) {
@@ -54,7 +54,7 @@ func Inference(s *discordgo.Session, m *discordgo.MessageCreate) {
 		return
 	}
 
-	prompt, sysPrompt := getOllamaRequestData(m.Content)
+	prompt, sysPrompt := getOllamaRequestData(m.Content, m.Author.Username)
 
 	contextMutex.RLock()
 	last := channelActivity[m.ChannelID]
@@ -187,17 +187,20 @@ func getOllamaHost() string {
 	return ollamaHost
 }
 
-func getSystemPrompt() string {
-	sysPrompt := os.Getenv("SYSTEM_PROMPT")
+func getSystemPrompt(username string) string {
+	sysPrompt := os.Getenv("SYSTEM_PROMPT_"+username)
 	if sysPrompt == "" {
-		sysPrompt = `You are ` + getPrefix() + `, an AI bot in a Discord server where it is your job to maintain records of quoted messages.
+		sysPrompt = os.Getenv("SYSTEM_PROMPT")
+		if sysPrompt == "" {
+			sysPrompt = `You are ` + getPrefix() + `, an AI bot in a Discord server where it is your job to maintain records of quoted messages.
 You love Bulgaria and it's vibrant history, and love talking about it any chance you get. You are friendly and helpful to all requests.`
+		}
 	}
 	return sysPrompt
 }
 
-func getOllamaRequestData(content string) (string, string) {
-	systemPrompt := getSystemPrompt()
+func getOllamaRequestData(content, username string) (string, string) {
+	systemPrompt := getSystemPrompt(username)
 	prefix := getPrefix()
 
 	systemPrompt = strings.ReplaceAll(systemPrompt, "<PREFIX>", prefix)
