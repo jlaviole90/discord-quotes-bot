@@ -38,10 +38,10 @@ type OllamaGenerateResponse struct {
 }
 
 var (
-	channelContext = make(map[string][]int)
-	channelActivity = make(map[string]time.Time)
+	userContext = make(map[string][]int)
+	userActivity = make(map[string]time.Time)
 	contextMutex = sync.RWMutex{}
-	contextTimeout = time.Minute * 30 
+	contextTimeout = time.Minute * 15
 )
 
 func Inference(s *discordgo.Session, m *discordgo.MessageCreate) {
@@ -52,19 +52,19 @@ func Inference(s *discordgo.Session, m *discordgo.MessageCreate) {
 	prompt, sysPrompt := getOllamaRequestData(m.Content, m.Author.Username)
 
 	contextMutex.RLock()
-	last := channelActivity[m.ChannelID]
+	last := userActivity[m.Author.ID]
 	contextMutex.RUnlock()
 
 	if time.Since(last) > contextTimeout {
 		contextMutex.Lock()
-		delete(channelContext, m.ChannelID)
-		delete(channelActivity, m.ChannelID)
+		delete(userContext, m.Author.ID)
+		delete(userActivity, m.Author.ID)
 		contextMutex.Unlock()
 		log.Printf("Cleared stale channel context for channel %s\n", m.ChannelID)
 	}
 
 	contextMutex.RLock()
-	ctx := channelContext[m.ChannelID]
+	ctx := userContext[m.Author.ID]
 	contextMutex.RUnlock()
 
 
@@ -105,7 +105,7 @@ func Inference(s *discordgo.Session, m *discordgo.MessageCreate) {
 	}()
 
 	client := &http.Client{
-		Timeout: time.Second * 600,
+		Timeout: time.Second * 300,
 	}
 	resp, err := client.Post(
 		getOllamaHost()+"/api/generate",
@@ -142,8 +142,8 @@ func Inference(s *discordgo.Session, m *discordgo.MessageCreate) {
 	}
 
 	contextMutex.Lock()
-	channelContext[m.ChannelID] = ollamaResp.Context
-	channelActivity[m.ChannelID] = time.Now()
+	userContext[m.Author.ID] = ollamaResp.Context
+	userActivity[m.Author.ID] = time.Now()
 	contextMutex.Unlock()
 
 	_, err = s.ChannelMessageSendReply(m.ChannelID, ollamaResp.Response, m.Reference())
@@ -166,34 +166,6 @@ func isProperlyMentioned(content string) bool {
 	return true
 }
 
-func getPrefix() string {
-	prefix := os.Getenv("MENTION_PREFIX")
-	if prefix == "" {
-		prefix = "georgibot"
-	}
-	return prefix
-}
-
-func getOllamaHost() string {
-	ollamaHost := os.Getenv("OLLAMA_HOST")
-	if ollamaHost == "" {
-		ollamaHost = "http://localhost:11434"
-	}
-	return ollamaHost
-}
-
-func getSystemPrompt(username string) string {
-	sysPrompt := os.Getenv("SYSTEM_PROMPT_"+strings.ToUpper(username))
-	if sysPrompt == "" {
-		sysPrompt = os.Getenv("SYSTEM_PROMPT")
-		if sysPrompt == "" {
-			sysPrompt = `You are ` + getPrefix() + `, an AI bot in a Discord server where it is your job to maintain records of quoted messages.
-You love Bulgaria and it's vibrant history, and love talking about it any chance you get. You are friendly and helpful to all requests.`
-		}
-	}
-	return sysPrompt
-}
-
 func getOllamaRequestData(content, username string) (string, string) {
 	systemPrompt := getSystemPrompt(username)
 	prefix := getPrefix()
@@ -212,8 +184,36 @@ func getOllamaRequestData(content, username string) (string, string) {
 	return prompt, systemPrompt
 }
 
+func getSystemPrompt(username string) string {
+	sysPrompt := os.Getenv("SYSTEM_PROMPT_"+strings.ToUpper(username))
+	if sysPrompt == "" {
+		sysPrompt = os.Getenv("SYSTEM_PROMPT")
+		if sysPrompt == "" {
+			sysPrompt = `You are ` + getPrefix() + `, an AI bot in a Discord server where it is your job to maintain records of quoted messages.
+You love Bulgaria and it's vibrant history, and love talking about it any chance you get. You are friendly and helpful to all requests.`
+		}
+	}
+	return sysPrompt
+}
+
+func getPrefix() string {
+	prefix := os.Getenv("MENTION_PREFIX")
+	if prefix == "" {
+		prefix = "georgibot"
+	}
+	return prefix
+}
+
 func enrichPrompt(prompt, user string) string {
 	return `This message was sent by: ` + user +
 		`. Message Content: ` + prompt
+}
+
+func getOllamaHost() string {
+	ollamaHost := os.Getenv("OLLAMA_HOST")
+	if ollamaHost == "" {
+		ollamaHost = "http://localhost:11434"
+	}
+	return ollamaHost
 }
 
