@@ -16,7 +16,7 @@ echo ""
 if [ -f "/models/hermes/hermes-llama3.2.gguf" ]; then
     echo "Found GGUF file: /models/hermes/hermes-llama3.2.gguf"
 else
-    echo "X GGUF file not found at /models/hermes/hermes-llama.3.2.gguf"
+    echo "X GGUF file not found at /models/hermes/hermes-llama3.2.gguf"
     echo "Available files in /models:"
     ls -lah /models/ || echo "Cannot access /models/"
     exit 1
@@ -28,7 +28,7 @@ else
     echo "Creating model hermes-llama from GGUF file..."
 
     cat > /tmp/Modelfile << 'EOF'
-FROM /models/phi/hermes-llama.gguf
+FROM /models/phi/hermes-llama3.2.gguf
 
 TEMPLATE """{{ if .System }}<|im_start|>system
 {{ .System }}<|im_end|>
