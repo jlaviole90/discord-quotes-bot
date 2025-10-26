@@ -28,7 +28,7 @@ else
     echo "Creating model hermes:llama3.2 from GGUF file..."
 
     cat > /tmp/Modelfile << 'EOF'
-FROM /models/phi/dolphin-phi3.gguf
+FROM /models/phi/hermes-llama3.2.gguf
 
 TEMPLATE """{{ if .System }}<|im_start|>system
 {{ .System }}<|im_end|>
