@@ -10,22 +10,22 @@ done
 echo "Ollama started!"
 
 echo "Checking for GGUF file..."
-ls -lah /models/phi/ || echo "Directory /models/phi/ not found!"
+ls -lah /models/hermes/ || echo "Directory /models/hermes/ not found!"
 echo ""
 
-if [ -f "/models/phi/dolphin-phi3.gguf" ]; then
-    echo "Found GGUF file: /models/phi/dolphin-phi3.gguf"
+if [ -f "/models/hermes/hermes-llama3.2.gguf" ]; then
+    echo "Found GGUF file: /models/hermes/hermes-llama3.2.gguf"
 else
-    echo "X GGUF file not found at /models/phi/dolphin-phi3.gguf"
+    echo "X GGUF file not found at /models/hermes/hermes-llama.3.2.gguf"
     echo "Available files in /models:"
     ls -lah /models/ || echo "Cannot access /models/"
     exit 1
 fi
 
-if ollama list | grep -q "dolphin:phi3"; then
-    echo "Model dolphin:phi3 already exists."
+if ollama list | grep -q "hermes:llama3.2"; then
+    echo "Model hermes:llama3.2 already exists."
 else
-    echo "Creating model dolphin:phi3 from GGUF file..."
+    echo "Creating model hermes:llama3.2 from GGUF file..."
 
     cat > /tmp/Modelfile << 'EOF'
 FROM /models/phi/dolphin-phi3.gguf
@@ -47,8 +47,8 @@ EOF
     cat /tmp/Modelfile
     echo ""
 
-    echo "Running: ollama create dolphin:phi3 -f /tmp/Modelfile"
-    ollama create dolphin:phi3 -f /tmp/Modelfile
+    echo "Running: ollama create hermes:llama3.2 -f /tmp/Modelfile"
+    ollama create hermes:llama3.2 -f /tmp/Modelfile
 
     echo "Completed model creation script."
 fi
