@@ -13,22 +13,22 @@ echo "Checking for GGUF file..."
 ls -lah /models/phi/ || echo "Directory /models/phi/ not found!"
 echo ""
 
-if [ -f "/models/phi/phi3-mini-4k.gguf" ]; then
-    echo "Found GGUF file: /models/phi/phi3-mini-4k.gguf"
+if [ -f "/models/phi/dolphin-phi3.gguf" ]; then
+    echo "Found GGUF file: /models/phi/dolphin-phi3.gguf"
 else
-    echo "X GGUF file not found at /models/phi/phi3-mini-4k.gguf"
+    echo "X GGUF file not found at /models/phi/dolphin-phi3.gguf"
     echo "Available files in /models:"
     ls -lah /models/ || echo "Cannot access /models/"
     exit 1
 fi
 
-if ollama list | grep -q "phi3:mini"; then
-    echo "Model phi3:mini already exists."
+if ollama list | grep -q "dolphin:phi3"; then
+    echo "Model dolphin:phi3 already exists."
 else
-    echo "Creating model phi3:mini from GGUF file..."
+    echo "Creating model dolphin:phi3 from GGUF file..."
 
     cat > /tmp/Modelfile << 'EOF'
-FROM /models/phi/phi3-mini-4k.gguf
+FROM /models/phi/dolphin-phi3.gguf
 
 TEMPLATE """{{ if .System }}<|im_start|>system
 {{ .System }}<|im_end|>
@@ -47,8 +47,8 @@ EOF
     cat /tmp/Modelfile
     echo ""
 
-    echo "Running: ollama create phi3:mini -f /tmp/Modelfile"
-    ollama create phi3:mini -f /tmp/Modelfile
+    echo "Running: ollama create dolphin:phi3 -f /tmp/Modelfile"
+    ollama create dolphin:phi3 -f /tmp/Modelfile
 
     echo "Completed model creation script."
 fi

@@ -60,7 +60,6 @@ func Inference(s *discordgo.Session, m *discordgo.MessageCreate) {
 		delete(userContext, m.Author.ID)
 		delete(userActivity, m.Author.ID)
 		contextMutex.Unlock()
-		log.Printf("Cleared stale channel context for channel %s\n", m.ChannelID)
 	}
 
 	contextMutex.RLock()
@@ -68,7 +67,7 @@ func Inference(s *discordgo.Session, m *discordgo.MessageCreate) {
 	contextMutex.RUnlock()
 
 	body, err := json.Marshal(OllamaGenerateRequest{
-		Model:   "phi3:mini",
+		Model:   "dolphin:phi3",
 		Prompt:  enrichPrompt(prompt, s, m),
 		System:  sysPrompt,
 		Stream:  false,
