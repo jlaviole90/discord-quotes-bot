@@ -67,7 +67,7 @@ func Inference(s *discordgo.Session, m *discordgo.MessageCreate) {
 	contextMutex.RUnlock()
 
 	body, err := json.Marshal(OllamaGenerateRequest{
-		Model:   "hermes:llama3.2",
+		Model:   "hermes-llama",
 		Prompt:  enrichPrompt(prompt, s, m),
 		System:  sysPrompt,
 		Stream:  false,
