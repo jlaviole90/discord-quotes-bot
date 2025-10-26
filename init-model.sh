@@ -7,7 +7,7 @@ until curl -s http://ollama:11434/api/tags > /dev/null 2>&1; do
     echo "Waiting for model..."
 done
 
-echo "Model hermes:llama3.2 is ready!"
+echo "Model hermes is ready!"
 
 echo "Starting quotes bot..."
 exec /app/discord-quotes-bot

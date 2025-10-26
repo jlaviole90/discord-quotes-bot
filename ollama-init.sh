@@ -22,10 +22,10 @@ else
     exit 1
 fi
 
-if ollama list | grep -q "hermes-llama"; then
+if ollama list | grep -q "hermes"; then
     echo "Model hermes-llama already exists."
 else
-    echo "Creating model hermes-llama from GGUF file..."
+    echo "Creating model hermes from GGUF file..."
 
     cat > /tmp/Modelfile << 'EOF'
 FROM /models/phi/hermes-llama3.2.gguf
@@ -47,8 +47,8 @@ EOF
     cat /tmp/Modelfile
     echo ""
 
-    echo "Running: ollama create hermes-llama -f /tmp/Modelfile"
-    ollama create hermes-llama -f /tmp/Modelfile
+    echo "Running: ollama create hermes -f /tmp/Modelfile"
+    ollama create hermes -f /tmp/Modelfile
 
     echo "Completed model creation script."
 fi
