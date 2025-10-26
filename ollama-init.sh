@@ -28,13 +28,13 @@ else
     echo "Creating model hermes from GGUF file..."
 
     cat > /tmp/Modelfile << 'EOF'
-FROM /models/phi/hermes-llama3.2.gguf
+FROM /models/hermes/hermes-llama3.2.gguf
 
-TEMPLATE """{{ if .System }}<|im_start|>system
+TEMPLATE """<|im_start|>system
 {{ .System }}<|im_end|>
-{{ end }}{{ if .Prompt }}<|im_start|>user
+<|im_start|>user
 {{ .Prompt }}<|im_end|>
-{{ end }}<|im_start|>assistant
+<|im_start|>assistant
 """
 
 PARAMETER stop "<|im_start|>"
@@ -42,6 +42,7 @@ PARAMETER stop "<|im_end|>"
 PARAMETER temperature 0.7
 PARAMETER top_p 0.8
 PARAMETER top_k 20
+PARAMETER repeat_penalty 1.1
 EOF
     echo "Modelfile contents:"
     cat /tmp/Modelfile
