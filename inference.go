@@ -37,12 +37,53 @@ type OllamaGenerateResponse struct {
 	EvalDuration       int    `json:"eval_duration"`
 }
 
+const fallbackModel = "hermes"
+
 var (
+	activeModel    = fallbackModel
 	userContext    = make(map[string][]int)
 	userActivity   = make(map[string]time.Time)
 	contextMutex   = sync.RWMutex{}
 	contextTimeout = time.Minute * 15
 )
+
+type ollamaTagsResponse struct {
+	Models []struct {
+		Name string `json:"name"`
+	} `json:"models"`
+}
+
+func detectModel() {
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Get(getOllamaHost() + "/api/tags")
+	if err != nil {
+		log.Printf("Could not query Ollama models, using fallback '%s': %v", fallbackModel, err)
+		return
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		log.Printf("Could not read Ollama tags response, using fallback '%s': %v", fallbackModel, err)
+		return
+	}
+
+	var tags ollamaTagsResponse
+	if err := json.Unmarshal(body, &tags); err != nil {
+		log.Printf("Could not parse Ollama tags, using fallback '%s': %v", fallbackModel, err)
+		return
+	}
+
+	for _, m := range tags.Models {
+		if strings.HasPrefix(m.Name, "impersonate") {
+			activeModel = "impersonate"
+			log.Printf("Detected fine-tuned model '%s', using it for inference", m.Name)
+			return
+		}
+	}
+
+	log.Printf("No 'impersonate' model found, using fallback '%s'", fallbackModel)
+}
 
 func Inference(s *discordgo.Session, m *discordgo.MessageCreate) {
 	if m.Author.Bot || !isProperlyMentioned(m.Content) {
@@ -67,7 +108,7 @@ func Inference(s *discordgo.Session, m *discordgo.MessageCreate) {
 	contextMutex.RUnlock()
 
 	body, err := json.Marshal(OllamaGenerateRequest{
-		Model:   "hermes",
+		Model:   activeModel,
 		Prompt:  enrichPrompt(prompt, s, m),
 		System:  sysPrompt,
 		Stream:  false,

@@ -24,6 +24,7 @@ func main() {
 	session.AddHandler(Quote)
 
 	// inference.go
+	detectModel()
 	session.AddHandler(Inference)
 
 	err = session.Open()

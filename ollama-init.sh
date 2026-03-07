@@ -54,6 +54,15 @@ EOF
     echo "Completed model creation script."
 fi
 
+if [ -f "/models/impersonate/Modelfile" ]; then
+    if ! ollama list | grep -q "impersonate"; then
+        echo "Creating impersonate model from /models/impersonate/Modelfile"
+        ollama create impersonate -f /models/impersonate/Modelfile
+    else
+        echo "Model 'impersonate' already exists."
+    fi
+fi
+
 echo "Available models:"
 ollama list
 
