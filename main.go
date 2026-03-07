@@ -20,8 +20,10 @@ func main() {
 		log.Printf("Logged in as %s", r.User.String())
 	})
 
+	/* Moving this to discord-records-bot
 	// quote.go
 	session.AddHandler(Quote)
+	*/
 
 	// inference.go
 	detectModel()
