@@ -139,7 +139,7 @@ func Inference(s *discordgo.Session, m *discordgo.MessageCreate) {
 	var err error
 
 	if activeModel == "impersonate" {
-		res, err = inferChat(prompt, m.Author.ID)
+		res, err = inferChat(stripBotPrefix(prompt), m.Author.ID)
 	} else {
 		res, err = inferGenerate(enrichPrompt(prompt, s, m), sysPrompt, m.Author.ID)
 	}
@@ -333,6 +333,21 @@ func enrichPrompt(prompt string, s *discordgo.Session, m *discordgo.MessageCreat
 	}
 
 	return msg
+}
+
+func stripBotPrefix(prompt string) string {
+	cleaned := strings.TrimSpace(prompt)
+	lower := strings.ToLower(cleaned)
+	pfx := strings.ToLower(getPrefix())
+
+	for _, p := range []string{"@" + pfx, pfx} {
+		if strings.HasPrefix(lower, p) {
+			cleaned = strings.TrimSpace(cleaned[len(p):])
+			cleaned = strings.TrimLeft(cleaned, ",. ")
+			return strings.TrimSpace(cleaned)
+		}
+	}
+	return cleaned
 }
 
 func getOllamaHost() string {
