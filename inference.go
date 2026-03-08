@@ -60,7 +60,6 @@ const fallbackModel = "hermes"
 var (
 	activeModel    = fallbackModel
 	userContext    = make(map[string][]int)
-	chatHistory    = make(map[string][]OllamaChatMessage)
 	userActivity   = make(map[string]time.Time)
 	contextMutex   = sync.RWMutex{}
 	contextTimeout = time.Minute * 15
@@ -167,16 +166,9 @@ func Inference(s *discordgo.Session, m *discordgo.MessageCreate) {
 }
 
 func inferChat(prompt, authorID string) (string, error) {
-	contextMutex.RLock()
-	history := chatHistory[authorID]
-	last := userActivity[authorID]
-	contextMutex.RUnlock()
-
-	if time.Since(last) > contextTimeout {
-		history = nil
+	messages := []OllamaChatMessage{
+		{Role: "user", Content: prompt},
 	}
-
-	messages := append(history, OllamaChatMessage{Role: "user", Content: prompt})
 
 	body, err := json.Marshal(OllamaChatRequest{
 		Model:    activeModel,
@@ -209,17 +201,6 @@ func inferChat(prompt, authorID string) (string, error) {
 	if err := json.Unmarshal(bbytes, &chatResp); err != nil {
 		return "", err
 	}
-
-	messages = append(messages, chatResp.Message)
-	const maxHistory = 10
-	if len(messages) > maxHistory {
-		messages = messages[len(messages)-maxHistory:]
-	}
-
-	contextMutex.Lock()
-	chatHistory[authorID] = messages
-	userActivity[authorID] = time.Now()
-	contextMutex.Unlock()
 
 	return chatResp.Message.Content, nil
 }
