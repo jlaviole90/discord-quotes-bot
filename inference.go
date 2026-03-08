@@ -37,11 +37,30 @@ type OllamaGenerateResponse struct {
 	EvalDuration       int    `json:"eval_duration"`
 }
 
+type OllamaChatMessage struct {
+	Role    string `json:"role"`
+	Content string `json:"content"`
+}
+
+type OllamaChatRequest struct {
+	Model    string              `json:"model"`
+	Messages []OllamaChatMessage `json:"messages"`
+	Stream   bool                `json:"stream"`
+}
+
+type OllamaChatResponse struct {
+	Model     string            `json:"model"`
+	CreatedAt string            `json:"created_at"`
+	Message   OllamaChatMessage `json:"message"`
+	Done      bool              `json:"done"`
+}
+
 const fallbackModel = "hermes"
 
 var (
 	activeModel    = fallbackModel
 	userContext    = make(map[string][]int)
+	chatHistory    = make(map[string][]OllamaChatMessage)
 	userActivity   = make(map[string]time.Time)
 	contextMutex   = sync.RWMutex{}
 	contextTimeout = time.Minute * 15
@@ -92,40 +111,6 @@ func Inference(s *discordgo.Session, m *discordgo.MessageCreate) {
 
 	prompt, sysPrompt := getOllamaRequestData(m.Content, m.Author.Username)
 
-	contextMutex.RLock()
-	last := userActivity[m.Author.ID]
-	contextMutex.RUnlock()
-
-	if time.Since(last) > contextTimeout {
-		contextMutex.Lock()
-		delete(userContext, m.Author.ID)
-		delete(userActivity, m.Author.ID)
-		contextMutex.Unlock()
-	}
-
-	contextMutex.RLock()
-	ctx := userContext[m.Author.ID]
-	contextMutex.RUnlock()
-
-	finalPrompt := enrichPrompt(prompt, s, m)
-	finalSystem := sysPrompt
-	if activeModel == "impersonate" {
-		finalPrompt = prompt
-		finalSystem = ""
-	}
-
-	body, err := json.Marshal(OllamaGenerateRequest{
-		Model:   activeModel,
-		Prompt:  finalPrompt,
-		System:  finalSystem,
-		Stream:  false,
-		Context: ctx,
-	})
-	if err != nil {
-		log.Printf("Error marshalling request: %s\n", err)
-		return
-	}
-
 	if len(prompt) > 1000 {
 		log.Printf("Prompt exceeds 1000 characters. Aborting.")
 		_, _ = s.ChannelMessageSendReply(
@@ -133,6 +118,7 @@ func Inference(s *discordgo.Session, m *discordgo.MessageCreate) {
 			"Yeah, not reading all that. 1000 characters or less please.",
 			m.Reference(),
 		)
+		return
 	}
 
 	done := make(chan bool)
@@ -150,14 +136,14 @@ func Inference(s *discordgo.Session, m *discordgo.MessageCreate) {
 		}
 	}()
 
-	client := &http.Client{
-		Timeout: time.Second * 300,
+	var res string
+	var err error
+
+	if activeModel == "impersonate" {
+		res, err = inferChat(prompt, m.Author.ID)
+	} else {
+		res, err = inferGenerate(enrichPrompt(prompt, s, m), sysPrompt, m.Author.ID)
 	}
-	resp, err := client.Post(
-		getOllamaHost()+"/api/generate",
-		"application/json",
-		bytes.NewBuffer(body),
-	)
 
 	close(done)
 
@@ -166,39 +152,133 @@ func Inference(s *discordgo.Session, m *discordgo.MessageCreate) {
 		return
 	}
 
+	if res == "" {
+		log.Printf("Empty response, sending default message\n")
+		return
+	}
+
+	res = strings.ReplaceAll(res, "*", "\\*")
+
+	_, sendErr := s.ChannelMessageSendReply(m.ChannelID, res, m.Reference())
+	if sendErr != nil {
+		log.Printf("Error sending response to Discord: %s\n", sendErr)
+		_, _ = s.ChannelMessageSend(m.ChannelID, res)
+	}
+}
+
+func inferChat(prompt, authorID string) (string, error) {
+	contextMutex.RLock()
+	history := chatHistory[authorID]
+	last := userActivity[authorID]
+	contextMutex.RUnlock()
+
+	if time.Since(last) > contextTimeout {
+		history = nil
+	}
+
+	messages := append(history, OllamaChatMessage{Role: "user", Content: prompt})
+
+	body, err := json.Marshal(OllamaChatRequest{
+		Model:    activeModel,
+		Messages: messages,
+		Stream:   false,
+	})
+	if err != nil {
+		return "", err
+	}
+
+	client := &http.Client{Timeout: time.Second * 300}
+	resp, err := client.Post(
+		getOllamaHost()+"/api/chat",
+		"application/json",
+		bytes.NewBuffer(body),
+	)
+	if err != nil {
+		return "", err
+	}
 	defer resp.Body.Close()
 
 	bbytes, err := io.ReadAll(resp.Body)
 	if err != nil {
-		log.Printf("Error reading response body: %s\n", err)
-		return
+		return "", err
+	}
+
+	log.Printf("Ollama chat response: %s\n", string(bbytes))
+
+	var chatResp OllamaChatResponse
+	if err := json.Unmarshal(bbytes, &chatResp); err != nil {
+		return "", err
+	}
+
+	messages = append(messages, chatResp.Message)
+	const maxHistory = 10
+	if len(messages) > maxHistory {
+		messages = messages[len(messages)-maxHistory:]
+	}
+
+	contextMutex.Lock()
+	chatHistory[authorID] = messages
+	userActivity[authorID] = time.Now()
+	contextMutex.Unlock()
+
+	return chatResp.Message.Content, nil
+}
+
+func inferGenerate(prompt, sysPrompt, authorID string) (string, error) {
+	contextMutex.RLock()
+	last := userActivity[authorID]
+	contextMutex.RUnlock()
+
+	if time.Since(last) > contextTimeout {
+		contextMutex.Lock()
+		delete(userContext, authorID)
+		contextMutex.Unlock()
+	}
+
+	contextMutex.RLock()
+	ctx := userContext[authorID]
+	contextMutex.RUnlock()
+
+	body, err := json.Marshal(OllamaGenerateRequest{
+		Model:   activeModel,
+		Prompt:  prompt,
+		System:  sysPrompt,
+		Stream:  false,
+		Context: ctx,
+	})
+	if err != nil {
+		return "", err
+	}
+
+	client := &http.Client{Timeout: time.Second * 300}
+	resp, err := client.Post(
+		getOllamaHost()+"/api/generate",
+		"application/json",
+		bytes.NewBuffer(body),
+	)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+
+	bbytes, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", err
 	}
 
 	log.Printf("Ollama response body: %s\n", string(bbytes))
 
 	var ollamaResp OllamaGenerateResponse
 	if err := json.Unmarshal(bbytes, &ollamaResp); err != nil {
-		log.Printf("Error decoding response: %s\n", err)
-		return
-	}
-
-	if ollamaResp.Response == "" {
-		log.Printf("Empty response, sending default message\n")
-		return
+		return "", err
 	}
 
 	contextMutex.Lock()
-	userContext[m.Author.ID] = ollamaResp.Context
-	userActivity[m.Author.ID] = time.Now()
+	userContext[authorID] = ollamaResp.Context
+	userActivity[authorID] = time.Now()
 	contextMutex.Unlock()
 
-	res := strings.ReplaceAll(ollamaResp.Response, "*", "\\*")
-
-	_, err = s.ChannelMessageSendReply(m.ChannelID, res, m.Reference())
-	if err != nil {
-		log.Printf("Error sending response to Discord: %s\n", err)
-		_, _ = s.ChannelMessageSend(m.ChannelID, res)
-	}
+	return ollamaResp.Response, nil
 }
 
 func isProperlyMentioned(content string) bool {
