@@ -15,12 +15,11 @@ import (
 )
 
 type OllamaGenerateRequest struct {
-	Model   string         `json:"model"`
-	Prompt  string         `json:"prompt"`
-	System  string         `json:"system"`
-	Stream  bool           `json:"stream"`
-	Context []int          `json:"context"`
-	Options map[string]any `json:"options,omitempty"`
+	Model   string `json:"model"`
+	Prompt  string `json:"prompt"`
+	System  string `json:"system"`
+	Stream  bool   `json:"stream"`
+	Context []int  `json:"context"`
 }
 
 type OllamaGenerateResponse struct {
@@ -38,31 +37,14 @@ type OllamaGenerateResponse struct {
 	EvalDuration       int    `json:"eval_duration"`
 }
 
-const (
-	maxContextTokens   = 4096
-	maxDiscordMsgLen   = 2000
-	streamEditInterval = 1500 * time.Millisecond
-)
+const fallbackModel = "hermes"
 
 var (
-	activeModel    string
+	activeModel    = fallbackModel
 	userContext    = make(map[string][]int)
 	userActivity   = make(map[string]time.Time)
 	contextMutex   = sync.RWMutex{}
-	contextTimeout = 15 * time.Minute
-	inferenceSem   = make(chan struct{}, 1)
-
-	ollamaHost string
-	prefix     string
-
-	ollamaClient = &http.Client{
-		Timeout: 300 * time.Second,
-		Transport: &http.Transport{
-			MaxIdleConns:        2,
-			MaxIdleConnsPerHost: 2,
-			IdleConnTimeout:     90 * time.Second,
-		},
-	}
+	contextTimeout = time.Minute * 15
 )
 
 type ollamaTagsResponse struct {
@@ -71,31 +53,24 @@ type ollamaTagsResponse struct {
 	} `json:"models"`
 }
 
-func init() {
-	ollamaHost = os.Getenv("OLLAMA_HOST")
-	if ollamaHost == "" {
-		ollamaHost = "http://localhost:11434"
-	}
-
-	prefix = os.Getenv("MENTION_PREFIX")
-	if prefix == "" {
-		prefix = "georgibot"
-	}
-
-	activeModel = "hermes"
-}
-
 func detectModel() {
-	resp, err := ollamaClient.Get(ollamaHost + "/api/tags")
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Get(getOllamaHost() + "/api/tags")
 	if err != nil {
-		log.Printf("Could not query Ollama models, using fallback '%s': %v", activeModel, err)
+		log.Printf("Could not query Ollama models, using fallback '%s': %v", fallbackModel, err)
 		return
 	}
 	defer resp.Body.Close()
 
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		log.Printf("Could not read Ollama tags response, using fallback '%s': %v", fallbackModel, err)
+		return
+	}
+
 	var tags ollamaTagsResponse
-	if err := json.NewDecoder(resp.Body).Decode(&tags); err != nil {
-		log.Printf("Could not parse Ollama tags, using fallback '%s': %v", activeModel, err)
+	if err := json.Unmarshal(body, &tags); err != nil {
+		log.Printf("Could not parse Ollama tags, using fallback '%s': %v", fallbackModel, err)
 		return
 	}
 
@@ -107,7 +82,7 @@ func detectModel() {
 		}
 	}
 
-	log.Printf("No 'impersonate' model found, using fallback '%s'", activeModel)
+	log.Printf("No 'impersonate' model found, using fallback '%s'", fallbackModel)
 }
 
 func Inference(s *discordgo.Session, m *discordgo.MessageCreate) {
@@ -115,29 +90,7 @@ func Inference(s *discordgo.Session, m *discordgo.MessageCreate) {
 		return
 	}
 
-	select {
-	case inferenceSem <- struct{}{}:
-		defer func() { <-inferenceSem }()
-	default:
-		_, _ = s.ChannelMessageSendReply(
-			m.ChannelID,
-			"I'm busy thinking about something else, try again in a moment.",
-			m.Reference(),
-		)
-		return
-	}
-
 	prompt, sysPrompt := getOllamaRequestData(m.Content, m.Author.Username)
-
-	if len(prompt) > 1000 {
-		log.Printf("Prompt exceeds 1000 characters. Aborting.")
-		_, _ = s.ChannelMessageSendReply(
-			m.ChannelID,
-			"Yeah, not reading all that. 1000 characters or less please.",
-			m.Reference(),
-		)
-		return
-	}
 
 	contextMutex.RLock()
 	last := userActivity[m.Author.ID]
@@ -154,35 +107,42 @@ func Inference(s *discordgo.Session, m *discordgo.MessageCreate) {
 	ctx := userContext[m.Author.ID]
 	contextMutex.RUnlock()
 
+	finalPrompt := enrichPrompt(prompt, s, m)
+	finalSystem := sysPrompt
+	if activeModel == "impersonate" {
+		finalPrompt = prompt
+		finalSystem = ""
+	}
+
 	body, err := json.Marshal(OllamaGenerateRequest{
 		Model:   activeModel,
-		Prompt:  enrichPrompt(prompt, s, m),
-		System:  sysPrompt,
-		Stream:  true,
+		Prompt:  finalPrompt,
+		System:  finalSystem,
+		Stream:  false,
 		Context: ctx,
-		Options: map[string]any{
-			"num_predict": 512,
-			"num_ctx":     4096,
-			"num_threads": 4,
-		},
 	})
 	if err != nil {
-		log.Printf("Error marshalling request: %s", err)
+		log.Printf("Error marshalling request: %s\n", err)
 		return
 	}
 
-	typingDone := make(chan struct{})
-	var typingOnce sync.Once
-	stopTyping := func() { typingOnce.Do(func() { close(typingDone) }) }
-	defer stopTyping()
+	if len(prompt) > 1000 {
+		log.Printf("Prompt exceeds 1000 characters. Aborting.")
+		_, _ = s.ChannelMessageSendReply(
+			m.ChannelID,
+			"Yeah, not reading all that. 1000 characters or less please.",
+			m.Reference(),
+		)
+	}
 
+	done := make(chan bool)
 	go func() {
-		_ = s.ChannelTyping(m.ChannelID)
 		ticker := time.NewTicker(5 * time.Second)
 		defer ticker.Stop()
+
 		for {
 			select {
-			case <-typingDone:
+			case <-done:
 				return
 			case <-ticker.C:
 				_ = s.ChannelTyping(m.ChannelID)
@@ -190,107 +150,59 @@ func Inference(s *discordgo.Session, m *discordgo.MessageCreate) {
 		}
 	}()
 
-	resp, err := ollamaClient.Post(
-		ollamaHost+"/api/generate",
+	client := &http.Client{
+		Timeout: time.Second * 300,
+	}
+	resp, err := client.Post(
+		getOllamaHost()+"/api/generate",
 		"application/json",
 		bytes.NewBuffer(body),
 	)
+
+	close(done)
+
 	if err != nil {
-		log.Printf("Error calling Ollama: %s", err)
+		log.Printf("Error calling Ollama: %s\n", err)
 		return
 	}
+
 	defer resp.Body.Close()
 
-	if resp.StatusCode != http.StatusOK {
-		errBody, _ := io.ReadAll(resp.Body)
-		log.Printf("Ollama returned status %d: %s", resp.StatusCode, string(errBody))
+	bbytes, err := io.ReadAll(resp.Body)
+	if err != nil {
+		log.Printf("Error reading response body: %s\n", err)
 		return
 	}
 
-	var fullResponse strings.Builder
-	var finalResp OllamaGenerateResponse
-	var reply *discordgo.Message
-	lastEdit := time.Now()
+	log.Printf("Ollama response body: %s\n", string(bbytes))
 
-	decoder := json.NewDecoder(resp.Body)
-	for {
-		var chunk OllamaGenerateResponse
-		if err := decoder.Decode(&chunk); err != nil {
-			if err != io.EOF {
-				log.Printf("Error decoding stream chunk: %s", err)
-			}
-			break
-		}
-
-		fullResponse.WriteString(chunk.Response)
-
-		if chunk.Done {
-			finalResp = chunk
-			break
-		}
-
-		text := truncateForDiscord(escapeMarkdown(fullResponse.String()))
-		if text == "" {
-			continue
-		}
-
-		if reply == nil {
-			stopTyping()
-			reply, err = s.ChannelMessageSendReply(m.ChannelID, text, m.Reference())
-			if err != nil {
-				log.Printf("Error sending initial reply: %s", err)
-			}
-			lastEdit = time.Now()
-		} else if time.Since(lastEdit) > streamEditInterval {
-			_, _ = s.ChannelMessageEdit(m.ChannelID, reply.ID, text)
-			lastEdit = time.Now()
-		}
-	}
-
-	finalText := truncateForDiscord(escapeMarkdown(fullResponse.String()))
-	if finalText == "" {
-		log.Printf("Empty response from Ollama")
+	var ollamaResp OllamaGenerateResponse
+	if err := json.Unmarshal(bbytes, &ollamaResp); err != nil {
+		log.Printf("Error decoding response: %s\n", err)
 		return
 	}
 
-	if reply == nil {
-		stopTyping()
-		_, err = s.ChannelMessageSendReply(m.ChannelID, finalText, m.Reference())
-		if err != nil {
-			log.Printf("Error sending response to Discord: %s", err)
-			_, _ = s.ChannelMessageSend(m.ChannelID, finalText)
-		}
-	} else {
-		_, _ = s.ChannelMessageEdit(m.ChannelID, reply.ID, finalText)
-	}
-
-	finalCtx := finalResp.Context
-	if len(finalCtx) > maxContextTokens {
-		finalCtx = finalCtx[len(finalCtx)-maxContextTokens:]
+	if ollamaResp.Response == "" {
+		log.Printf("Empty response, sending default message\n")
+		return
 	}
 
 	contextMutex.Lock()
-	userContext[m.Author.ID] = finalCtx
+	userContext[m.Author.ID] = ollamaResp.Context
 	userActivity[m.Author.ID] = time.Now()
 	contextMutex.Unlock()
 
-	log.Printf("Inference complete: model=%s eval_count=%d total_duration_ns=%d",
-		finalResp.Model, finalResp.EvalCount, finalResp.TotalDuration)
-}
+	res := strings.ReplaceAll(ollamaResp.Response, "*", "\\*")
 
-func truncateForDiscord(s string) string {
-	runes := []rune(s)
-	if len(runes) > maxDiscordMsgLen {
-		return string(runes[:maxDiscordMsgLen-3]) + "..."
+	_, err = s.ChannelMessageSendReply(m.ChannelID, res, m.Reference())
+	if err != nil {
+		log.Printf("Error sending response to Discord: %s\n", err)
+		_, _ = s.ChannelMessageSend(m.ChannelID, res)
 	}
-	return s
-}
-
-func escapeMarkdown(s string) string {
-	return strings.ReplaceAll(s, "*", "\\*")
 }
 
 func isProperlyMentioned(content string) bool {
+	prefix := getPrefix()
 	str := strings.ToLower(content)
 
 	if !strings.HasPrefix(str, prefix) &&
@@ -304,6 +216,7 @@ func isProperlyMentioned(content string) bool {
 
 func getOllamaRequestData(content, username string) (string, string) {
 	systemPrompt := getSystemPrompt(username)
+	prefix := getPrefix()
 
 	systemPrompt = strings.ReplaceAll(systemPrompt, "<PREFIX>", prefix)
 	systemPrompt = strings.ReplaceAll(systemPrompt, "\n", " ")
@@ -312,7 +225,6 @@ func getOllamaRequestData(content, username string) (string, string) {
 
 	prompt := strings.ReplaceAll(content, prefix+",", "")
 	prompt = strings.ReplaceAll(prompt, prefix+",", "")
-	prompt = strings.ReplaceAll(prompt, "@"+prefix+",", "")
 	prompt = strings.ReplaceAll(prompt, "\n", " ")
 	prompt = strings.ReplaceAll(prompt, "\r", " ")
 	prompt = strings.ReplaceAll(prompt, "\t", " ")
@@ -325,10 +237,19 @@ func getSystemPrompt(username string) string {
 	if sysPrompt == "" {
 		sysPrompt = os.Getenv("SYSTEM_PROMPT")
 		if sysPrompt == "" {
-			sysPrompt = `You are ` + prefix + `, an AI bot in a Discord server where it is your job to maintain records of quoted messages.`
+			sysPrompt = `You are ` + getPrefix() + `, an AI bot in a Discord server where it is your job to maintain records of quoted messages.
+You love Bulgaria and it's vibrant history, and love talking about it any chance you get. You are friendly and helpful to all requests.`
 		}
 	}
 	return sysPrompt
+}
+
+func getPrefix() string {
+	prefix := os.Getenv("MENTION_PREFIX")
+	if prefix == "" {
+		prefix = "georgibot"
+	}
+	return prefix
 }
 
 func enrichPrompt(prompt string, s *discordgo.Session, m *discordgo.MessageCreate) string {
@@ -343,11 +264,20 @@ func enrichPrompt(prompt string, s *discordgo.Session, m *discordgo.MessageCreat
 			". The reply was sent by: "
 
 		if m.ReferencedMessage.Author.ID == s.State.User.ID {
-			return msg + "You, the bot named " + prefix
-		}
+			return msg + "You, the bot named " + getPrefix()
+
+		} 
 
 		return msg + m.ReferencedMessage.Author.Username
 	}
 
 	return msg
+}
+
+func getOllamaHost() string {
+	ollamaHost := os.Getenv("OLLAMA_HOST")
+	if ollamaHost == "" {
+		ollamaHost = "http://localhost:11434"
+	}
+	return ollamaHost
 }
