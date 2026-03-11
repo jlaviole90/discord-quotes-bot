@@ -15,17 +15,35 @@ import (
 )
 
 type OllamaGenerateRequest struct {
-	Model   string `json:"model"`
-	Prompt  string `json:"prompt"`
-	System  string `json:"system"`
-	Stream  bool   `json:"stream"`
-	Context []int  `json:"context"`
+	Model   string         `json:"model"`
+	Prompt  string         `json:"prompt"`
+	System  string         `json:"system"`
+	Stream  bool           `json:"stream"`
+	Context []int          `json:"context"`
+	Options map[string]any `json:"options,omitempty"`
 }
 
-type OllamaGenerateResponse struct {
-	Model              string `json:"model"`
-	CreatedAt          string `json:"created_at"`
-	Response           string `json:"response"`
+type OllamaChatRequest struct {
+	Model    string              `json:"model"`
+	Messages []OllamaChatMessage `json:"messages"`
+	Stream   bool                `json:"stream"`
+	Options  map[string]any      `json:"options,omitempty"`
+}
+
+type OllamaChatMessage struct {
+	Role    string `json:"role"`
+	Content string `json:"content"`
+}
+
+// streamChunk is a union type that handles both /api/generate and /api/chat
+// streaming responses. Fields not present in a given response decode as zero values.
+type streamChunk struct {
+	Model    string `json:"model"`
+	Response string `json:"response"`
+	Message  struct {
+		Role    string `json:"role"`
+		Content string `json:"content"`
+	} `json:"message"`
 	Done               bool   `json:"done"`
 	DoneReason         string `json:"done_reason"`
 	Context            []int  `json:"context"`
@@ -37,33 +55,12 @@ type OllamaGenerateResponse struct {
 	EvalDuration       int    `json:"eval_duration"`
 }
 
-type OllamaChatMessage struct {
-	Role    string `json:"role"`
-	Content string `json:"content"`
+func (c *streamChunk) text() string {
+	if c.Response != "" {
+		return c.Response
+	}
+	return c.Message.Content
 }
-
-type OllamaChatRequest struct {
-	Model    string              `json:"model"`
-	Messages []OllamaChatMessage `json:"messages"`
-	Stream   bool                `json:"stream"`
-}
-
-type OllamaChatResponse struct {
-	Model     string            `json:"model"`
-	CreatedAt string            `json:"created_at"`
-	Message   OllamaChatMessage `json:"message"`
-	Done      bool              `json:"done"`
-}
-
-const fallbackModel = "hermes"
-
-var (
-	activeModel    = fallbackModel
-	userContext    = make(map[string][]int)
-	userActivity   = make(map[string]time.Time)
-	contextMutex   = sync.RWMutex{}
-	contextTimeout = time.Minute * 15
-)
 
 type ollamaTagsResponse struct {
 	Models []struct {
@@ -71,24 +68,70 @@ type ollamaTagsResponse struct {
 	} `json:"models"`
 }
 
+const (
+	maxContextTokens   = 4096
+	maxDiscordMsgLen   = 2000
+	streamEditInterval = 1500 * time.Millisecond
+)
+
+var (
+	activeModel  string
+	userContext   = make(map[string][]int)
+	userActivity = make(map[string]time.Time)
+	contextMutex = sync.RWMutex{}
+	contextTimeout = 15 * time.Minute
+	inferenceSem = make(chan struct{}, 1)
+
+	ollamaHost   string
+	prefix       string
+	triggerWords []string
+
+	ollamaClient = &http.Client{
+		Timeout: 300 * time.Second,
+		Transport: &http.Transport{
+			MaxIdleConns:        2,
+			MaxIdleConnsPerHost: 2,
+			IdleConnTimeout:     90 * time.Second,
+		},
+	}
+)
+
+func init() {
+	ollamaHost = os.Getenv("OLLAMA_HOST")
+	if ollamaHost == "" {
+		ollamaHost = "http://localhost:11434"
+	}
+
+	prefix = os.Getenv("MENTION_PREFIX")
+	if prefix == "" {
+		prefix = "georgibot"
+	}
+
+	if words := os.Getenv("TRIGGER_WORDS"); words != "" {
+		for _, w := range strings.Split(words, ",") {
+			if trimmed := strings.TrimSpace(strings.ToLower(w)); trimmed != "" {
+				triggerWords = append(triggerWords, trimmed)
+			}
+		}
+	}
+	if len(triggerWords) > 0 {
+		log.Printf("Loaded %d trigger word(s): %v", len(triggerWords), triggerWords)
+	}
+
+	activeModel = "hermes"
+}
+
 func detectModel() {
-	client := &http.Client{Timeout: 10 * time.Second}
-	resp, err := client.Get(getOllamaHost() + "/api/tags")
+	resp, err := ollamaClient.Get(ollamaHost + "/api/tags")
 	if err != nil {
-		log.Printf("Could not query Ollama models, using fallback '%s': %v", fallbackModel, err)
+		log.Printf("Could not query Ollama models, using fallback '%s': %v", activeModel, err)
 		return
 	}
 	defer resp.Body.Close()
 
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		log.Printf("Could not read Ollama tags response, using fallback '%s': %v", fallbackModel, err)
-		return
-	}
-
 	var tags ollamaTagsResponse
-	if err := json.Unmarshal(body, &tags); err != nil {
-		log.Printf("Could not parse Ollama tags, using fallback '%s': %v", fallbackModel, err)
+	if err := json.NewDecoder(resp.Body).Decode(&tags); err != nil {
+		log.Printf("Could not parse Ollama tags, using fallback '%s': %v", activeModel, err)
 		return
 	}
 
@@ -100,11 +143,23 @@ func detectModel() {
 		}
 	}
 
-	log.Printf("No 'impersonate' model found, using fallback '%s'", fallbackModel)
+	log.Printf("No 'impersonate' model found, using fallback '%s'", activeModel)
 }
 
 func Inference(s *discordgo.Session, m *discordgo.MessageCreate) {
 	if m.Author.Bot || !isProperlyMentioned(m.Content) {
+		return
+	}
+
+	select {
+	case inferenceSem <- struct{}{}:
+		defer func() { <-inferenceSem }()
+	default:
+		_, _ = s.ChannelMessageSendReply(
+			m.ChannelID,
+			"I'm busy thinking about something else, try again in a moment.",
+			m.Reference(),
+		)
 		return
 	}
 
@@ -120,14 +175,53 @@ func Inference(s *discordgo.Session, m *discordgo.MessageCreate) {
 		return
 	}
 
-	done := make(chan bool)
+	var reqBody []byte
+	var endpoint string
+	var err error
+
+	opts := map[string]any{
+		"num_predict": 512,
+		"num_ctx":     4096,
+		"num_threads": 4,
+	}
+
+	if activeModel == "impersonate" {
+		endpoint = "/api/chat"
+		reqBody, err = json.Marshal(OllamaChatRequest{
+			Model:    activeModel,
+			Messages: []OllamaChatMessage{{Role: "user", Content: stripBotPrefix(prompt)}},
+			Stream:   true,
+			Options:  opts,
+		})
+	} else {
+		endpoint = "/api/generate"
+		ctx := getAndCleanContext(m.Author.ID)
+		reqBody, err = json.Marshal(OllamaGenerateRequest{
+			Model:   activeModel,
+			Prompt:  enrichPrompt(prompt, s, m),
+			System:  sysPrompt,
+			Stream:  true,
+			Context: ctx,
+			Options: opts,
+		})
+	}
+	if err != nil {
+		log.Printf("Error marshalling request: %s", err)
+		return
+	}
+
+	typingDone := make(chan struct{})
+	var typingOnce sync.Once
+	stopTyping := func() { typingOnce.Do(func() { close(typingDone) }) }
+	defer stopTyping()
+
 	go func() {
+		_ = s.ChannelTyping(m.ChannelID)
 		ticker := time.NewTicker(5 * time.Second)
 		defer ticker.Stop()
-
 		for {
 			select {
-			case <-done:
+			case <-typingDone:
 				return
 			case <-ticker.C:
 				_ = s.ChannelTyping(m.ChannelID)
@@ -135,77 +229,96 @@ func Inference(s *discordgo.Session, m *discordgo.MessageCreate) {
 		}
 	}()
 
-	var res string
-	var err error
-
-	if activeModel == "impersonate" {
-		res, err = inferChat(stripBotPrefix(prompt), m.Author.ID)
-	} else {
-		res, err = inferGenerate(enrichPrompt(prompt, s, m), sysPrompt, m.Author.ID)
-	}
-
-	close(done)
-
-	if err != nil {
-		log.Printf("Error calling Ollama: %s\n", err)
-		return
-	}
-
-	if res == "" {
-		log.Printf("Empty response, sending default message\n")
-		return
-	}
-
-	res = strings.ReplaceAll(res, "*", "\\*")
-
-	_, sendErr := s.ChannelMessageSendReply(m.ChannelID, res, m.Reference())
-	if sendErr != nil {
-		log.Printf("Error sending response to Discord: %s\n", sendErr)
-		_, _ = s.ChannelMessageSend(m.ChannelID, res)
-	}
-}
-
-func inferChat(prompt, authorID string) (string, error) {
-	messages := []OllamaChatMessage{
-		{Role: "user", Content: prompt},
-	}
-
-	body, err := json.Marshal(OllamaChatRequest{
-		Model:    activeModel,
-		Messages: messages,
-		Stream:   false,
-	})
-	if err != nil {
-		return "", err
-	}
-
-	client := &http.Client{Timeout: time.Second * 300}
-	resp, err := client.Post(
-		getOllamaHost()+"/api/chat",
+	resp, err := ollamaClient.Post(
+		ollamaHost+endpoint,
 		"application/json",
-		bytes.NewBuffer(body),
+		bytes.NewBuffer(reqBody),
 	)
 	if err != nil {
-		return "", err
+		log.Printf("Error calling Ollama: %s", err)
+		return
 	}
 	defer resp.Body.Close()
 
-	bbytes, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return "", err
+	if resp.StatusCode != http.StatusOK {
+		errBody, _ := io.ReadAll(resp.Body)
+		log.Printf("Ollama returned status %d: %s", resp.StatusCode, string(errBody))
+		return
 	}
 
-	log.Printf("Ollama chat response: %s\n", string(bbytes))
+	var fullResponse strings.Builder
+	var finalChunk streamChunk
+	var reply *discordgo.Message
+	lastEdit := time.Now()
 
-	var chatResp OllamaChatResponse
-	if err := json.Unmarshal(bbytes, &chatResp); err != nil {
-		return "", err
+	decoder := json.NewDecoder(resp.Body)
+	for {
+		var chunk streamChunk
+		if err := decoder.Decode(&chunk); err != nil {
+			if err != io.EOF {
+				log.Printf("Error decoding stream chunk: %s", err)
+			}
+			break
+		}
+
+		fullResponse.WriteString(chunk.text())
+
+		if chunk.Done {
+			finalChunk = chunk
+			break
+		}
+
+		text := truncateForDiscord(escapeMarkdown(fullResponse.String()))
+		if text == "" {
+			continue
+		}
+
+		if reply == nil {
+			stopTyping()
+			reply, err = s.ChannelMessageSendReply(m.ChannelID, text, m.Reference())
+			if err != nil {
+				log.Printf("Error sending initial reply: %s", err)
+			}
+			lastEdit = time.Now()
+		} else if time.Since(lastEdit) > streamEditInterval {
+			_, _ = s.ChannelMessageEdit(m.ChannelID, reply.ID, text)
+			lastEdit = time.Now()
+		}
 	}
 
-	return chatResp.Message.Content, nil
+	finalText := truncateForDiscord(escapeMarkdown(fullResponse.String()))
+	if finalText == "" {
+		log.Printf("Empty response from Ollama")
+		return
+	}
+
+	if reply == nil {
+		stopTyping()
+		_, err = s.ChannelMessageSendReply(m.ChannelID, finalText, m.Reference())
+		if err != nil {
+			log.Printf("Error sending response to Discord: %s", err)
+			_, _ = s.ChannelMessageSend(m.ChannelID, finalText)
+		}
+	} else {
+		_, _ = s.ChannelMessageEdit(m.ChannelID, reply.ID, finalText)
+	}
+
+	if activeModel != "impersonate" {
+		finalCtx := finalChunk.Context
+		if len(finalCtx) > maxContextTokens {
+			finalCtx = finalCtx[len(finalCtx)-maxContextTokens:]
+		}
+		contextMutex.Lock()
+		userContext[m.Author.ID] = finalCtx
+		userActivity[m.Author.ID] = time.Now()
+		contextMutex.Unlock()
+	}
+
+	log.Printf("Inference complete: model=%s eval_count=%d total_duration_ns=%d",
+		finalChunk.Model, finalChunk.EvalCount, finalChunk.TotalDuration)
 }
 
-func inferGenerate(prompt, sysPrompt, authorID string) (string, error) {
+func getAndCleanContext(authorID string) []int {
 	contextMutex.RLock()
 	last := userActivity[authorID]
 	contextMutex.RUnlock()
@@ -213,71 +326,34 @@ func inferGenerate(prompt, sysPrompt, authorID string) (string, error) {
 	if time.Since(last) > contextTimeout {
 		contextMutex.Lock()
 		delete(userContext, authorID)
+		delete(userActivity, authorID)
 		contextMutex.Unlock()
 	}
 
 	contextMutex.RLock()
 	ctx := userContext[authorID]
 	contextMutex.RUnlock()
-
-	body, err := json.Marshal(OllamaGenerateRequest{
-		Model:   activeModel,
-		Prompt:  prompt,
-		System:  sysPrompt,
-		Stream:  false,
-		Context: ctx,
-	})
-	if err != nil {
-		return "", err
-	}
-
-	client := &http.Client{Timeout: time.Second * 300}
-	resp, err := client.Post(
-		getOllamaHost()+"/api/generate",
-		"application/json",
-		bytes.NewBuffer(body),
-	)
-	if err != nil {
-		return "", err
-	}
-	defer resp.Body.Close()
-
-	bbytes, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return "", err
-	}
-
-	log.Printf("Ollama response body: %s\n", string(bbytes))
-
-	var ollamaResp OllamaGenerateResponse
-	if err := json.Unmarshal(bbytes, &ollamaResp); err != nil {
-		return "", err
-	}
-
-	contextMutex.Lock()
-	userContext[authorID] = ollamaResp.Context
-	userActivity[authorID] = time.Now()
-	contextMutex.Unlock()
-
-	return ollamaResp.Response, nil
+	return ctx
 }
 
 func isProperlyMentioned(content string) bool {
-	prefix := getPrefix()
 	str := strings.ToLower(content)
 
-	if !strings.HasPrefix(str, prefix) &&
-		!strings.HasPrefix(str, "@"+prefix) &&
-		!strings.Contains(str, "bulgaria") {
-		return false
+	if strings.HasPrefix(str, prefix) || strings.HasPrefix(str, "@"+prefix) {
+		return true
 	}
 
-	return true
+	for _, word := range triggerWords {
+		if strings.Contains(str, word) {
+			return true
+		}
+	}
+
+	return false
 }
 
 func getOllamaRequestData(content, username string) (string, string) {
 	systemPrompt := getSystemPrompt(username)
-	prefix := getPrefix()
 
 	systemPrompt = strings.ReplaceAll(systemPrompt, "<PREFIX>", prefix)
 	systemPrompt = strings.ReplaceAll(systemPrompt, "\n", " ")
@@ -285,7 +361,7 @@ func getOllamaRequestData(content, username string) (string, string) {
 	systemPrompt = strings.ReplaceAll(systemPrompt, "\t", " ")
 
 	prompt := strings.ReplaceAll(content, prefix+",", "")
-	prompt = strings.ReplaceAll(prompt, prefix+",", "")
+	prompt = strings.ReplaceAll(prompt, "@"+prefix+",", "")
 	prompt = strings.ReplaceAll(prompt, "\n", " ")
 	prompt = strings.ReplaceAll(prompt, "\r", " ")
 	prompt = strings.ReplaceAll(prompt, "\t", " ")
@@ -298,19 +374,10 @@ func getSystemPrompt(username string) string {
 	if sysPrompt == "" {
 		sysPrompt = os.Getenv("SYSTEM_PROMPT")
 		if sysPrompt == "" {
-			sysPrompt = `You are ` + getPrefix() + `, an AI bot in a Discord server where it is your job to maintain records of quoted messages.
-You love Bulgaria and it's vibrant history, and love talking about it any chance you get. You are friendly and helpful to all requests.`
+			sysPrompt = `You are ` + prefix + `, an AI bot in a Discord server. You are friendly and helpful to all requests.`
 		}
 	}
 	return sysPrompt
-}
-
-func getPrefix() string {
-	prefix := os.Getenv("MENTION_PREFIX")
-	if prefix == "" {
-		prefix = "georgibot"
-	}
-	return prefix
 }
 
 func enrichPrompt(prompt string, s *discordgo.Session, m *discordgo.MessageCreate) string {
@@ -325,9 +392,8 @@ func enrichPrompt(prompt string, s *discordgo.Session, m *discordgo.MessageCreat
 			". The reply was sent by: "
 
 		if m.ReferencedMessage.Author.ID == s.State.User.ID {
-			return msg + "You, the bot named " + getPrefix()
-
-		} 
+			return msg + "You, the bot named " + prefix
+		}
 
 		return msg + m.ReferencedMessage.Author.Username
 	}
@@ -338,7 +404,7 @@ func enrichPrompt(prompt string, s *discordgo.Session, m *discordgo.MessageCreat
 func stripBotPrefix(prompt string) string {
 	cleaned := strings.TrimSpace(prompt)
 	lower := strings.ToLower(cleaned)
-	pfx := strings.ToLower(getPrefix())
+	pfx := strings.ToLower(prefix)
 
 	for _, p := range []string{"@" + pfx, pfx} {
 		if strings.HasPrefix(lower, p) {
@@ -350,10 +416,14 @@ func stripBotPrefix(prompt string) string {
 	return cleaned
 }
 
-func getOllamaHost() string {
-	ollamaHost := os.Getenv("OLLAMA_HOST")
-	if ollamaHost == "" {
-		ollamaHost = "http://localhost:11434"
+func truncateForDiscord(s string) string {
+	runes := []rune(s)
+	if len(runes) > maxDiscordMsgLen {
+		return string(runes[:maxDiscordMsgLen-3]) + "..."
 	}
-	return ollamaHost
+	return s
+}
+
+func escapeMarkdown(s string) string {
+	return strings.ReplaceAll(s, "*", "\\*")
 }
